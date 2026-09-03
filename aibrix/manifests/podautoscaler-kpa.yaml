@@ -1,0 +1,43 @@
+# =============================================================================
+# Inference-shaped autoscaling: KPA по утилизации KV-cache (gpu_cache_usage_perc)
+# Источник: aibrix v0.7.0, samples/autoscaling/kpa.yaml + docs annotation table
+# =============================================================================
+# Масштабирует Deployment qwen-coder-1-5b-instruct (из vllm-lora-base.yaml).
+# Метрику контроллер собирает сам с каждого пода (:8000/metrics) —
+# metrics-server и Prometheus НЕ нужны.
+#
+# Цепочка вместе с автоскейлером Selectel (CA):
+#   трафик ↑ -> KPA поднимает replicas -> поды Pending (nvidia.com/gpu) ->
+#   CA добавляет GPU-ноду в пределах min/max нодгруппы -> vLLM грузит модель.
+# Подробный разбор совместимости и оговорок: docs/03-autoscaling.md
+#
+# ВАЖНО: maxReplicas ограничен вашей GPU-нодгруппой (минимум держите 1 ноду
+# тёплой — загрузка модели это минуты, не секунды).
+# =============================================================================
+apiVersion: autoscaling.aibrix.ai/v1alpha1
+kind: PodAutoscaler
+metadata:
+  name: qwen-coder-1-5b-instruct-kpa
+  namespace: default
+  annotations:
+    # Аннотации по таблице из документации AIBrix (metric-based autoscaling):
+    autoscaling.aibrix.ai/scale-down-cooldown-window: 3m
+    # autoscaling.aibrix.ai/max-scale-up-rate: "2"        # дефолт
+    # autoscaling.aibrix.ai/max-scale-down-rate: "2"      # дефолт
+    # autoscaling.aibrix.ai/panic-threshold: "2.0"       # дефолт (KPA)
+    # autoscaling.aibrix.ai/panic-window-seconds: "60"    # дефолт (KPA)
+spec:
+  scalingStrategy: KPA # Knative-стиль: stable/panic окна, быстрая реакция на всплески
+  minReplicas: 1
+  maxReplicas: 4
+  metricsSources:
+    - metricSourceType: pod
+      protocolType: http
+      port: "8000"
+      path: metrics
+      targetMetric: gpu_cache_usage_perc # утилизация KV-cache/GPU-памяти
+      targetValue: "0.5"
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: qwen-coder-1-5b-instruct

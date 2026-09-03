@@ -1,0 +1,192 @@
+# =============================================================================
+# PoC: P/D-дисагрегация (prefill/decode) НА ОДНОЙ НОДЕ — тест механики без RDMA
+# Источник: aibrix v0.7.0, samples/quickstart/pd-model.yaml (StormService vllm-1p1d)
+# =============================================================================
+# НАЗНАЧЕНИЕ: самый дешёвый способ проверить на MKS саму механику P/D —
+# оркестрацию StormService, пейринг подов шлюзом, routing-strategy: pd,
+# трансфер KV через node-local транспорт.
+#
+# ⚠️ СТАТУС (честно): кросс-нодовый P/D в AIBrix документирован под
+# «high-speed interconnect» (RDMA) — на кластере MKS без RDMA это НЕ рабочий
+# продакшн-путь. One-node вариант с NIXL/UCX поверх node-local транспорта
+# AIBrix НЕ документирует и НЕ тестирует — статус «предположение, PoC».
+# Критерий успеха: запрос с routing-strategy: pd возвращает ответ, логи vLLM
+# показывают трансфер KV, latency не деградирует относительно обычного деплоя.
+#
+# GPU: 2 × nvidia.com/gpu НА ОДНОЙ ноде (prefill + decode). Модель ~16 ГБ bf16.
+# =============================================================================
+apiVersion: orchestration.aibrix.ai/v1alpha1
+kind: StormService
+metadata:
+  name: vllm-1p1d
+  namespace: default
+spec:
+  replicas: 1 # pooled mode: роли масштабируются независимо
+  updateStrategy:
+    type: InPlaceUpdate
+  stateful: true
+  selector:
+    matchLabels:
+      app: vllm-1p1d
+  template:
+    metadata:
+      labels:
+        app: vllm-1p1d
+    spec:
+      roles:
+        - name: prefill
+          replicas: 1
+          stateful: true
+          template:
+            metadata:
+              labels:
+                model.aibrix.ai/name: deepseek-r1-distill-llama-8b
+                model.aibrix.ai/port: "8000"
+                model.aibrix.ai/engine: vllm
+                app: vllm-1p1d
+            spec:
+              # PoC-добавка (нет в официальном сэмпле): жёстко co-schedule'ить
+              # пару prefill+decode на ОДНОЙ ноде, чтобы трансфер KV шёл через
+              # node-local транспорт (posix/shared memory), а не через сеть.
+              affinity:
+                podAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    - labelSelector:
+                        matchLabels:
+                          role-name: decode # лейбл генерирует контроллер StormService
+                      topologyKey: kubernetes.io/hostname
+              containers:
+                - name: prefill
+                  image: aibrix/vllm-openai:v0.9.2-cu128-nixl-v0.4.1 # enhanced-образ с NIXL
+                  command: ["sh", "-c"]
+                  args:
+                    - |
+                      vllm serve \
+                      --host "0.0.0.0" \
+                      --port "8000" \
+                      --uvicorn-log-level warning \
+                      --model deepseek-ai/DeepSeek-R1-Distill-Llama-8B \
+                      --served-model-name deepseek-r1-distill-llama-8b \
+                      --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}'
+                  env:
+                    - name: PYTHONHASHSEED
+                      value: "1047"
+                    - name: VLLM_SERVER_DEV_MODE
+                      value: "1"
+                    - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+                      value: "0.0.0.0"
+                    - name: VLLM_NIXL_SIDE_CHANNEL_PORT
+                      value: "5558"
+                    - name: VLLM_WORKER_MULTIPROC_METHOD
+                      value: spawn
+                    - name: VLLM_ENABLE_V1_MULTIPROCESSING
+                      value: "0"
+                    - name: GLOO_SOCKET_IFNAME
+                      value: eth0
+                    - name: NCCL_SOCKET_IFNAME
+                      value: eth0
+                    # ── далее env из сэмпла вендора (Volcano Engine, IB-сеть):
+                    # на ноде без InfiniBand NCCL поднимет доступный транспорт;
+                    # NCCL_DEBUG=INFO покажет какой — для PoC это диагностический
+                    # критерий, значения НЕ являются истиной для MKS.
+                    - name: NCCL_IB_DISABLE
+                      value: "0"
+                    - name: NCCL_IB_GID_INDEX
+                      value: "7"
+                    - name: NCCL_DEBUG
+                      value: INFO
+                    - name: UCX_TLS
+                      value: ^gga
+                  resources:
+                    limits:
+                      nvidia.com/gpu: 1
+                    requests:
+                      nvidia.com/gpu: 1
+                  securityContext:
+                    capabilities:
+                      add:
+                        - IPC_LOCK # из сэмпла; поддержка capabilities в MKS не подтверждена (docs/06) — проверьте
+        - name: decode
+          replicas: 1
+          stateful: true
+          template:
+            metadata:
+              labels:
+                model.aibrix.ai/name: deepseek-r1-distill-llama-8b
+                model.aibrix.ai/port: "8000"
+                model.aibrix.ai/engine: vllm
+                app: vllm-1p1d
+            spec:
+              # PoC-добавка: зеркальный affinity — decode держится рядом с prefill
+              affinity:
+                podAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    - labelSelector:
+                        matchLabels:
+                          role-name: prefill
+                      topologyKey: kubernetes.io/hostname
+              containers:
+                - name: decode
+                  image: aibrix/vllm-openai:v0.9.2-cu128-nixl-v0.4.1
+                  command: ["sh", "-c"]
+                  args:
+                    - |
+                      vllm serve \
+                      --host "0.0.0.0" \
+                      --port "8000" \
+                      --uvicorn-log-level warning \
+                      --model deepseek-ai/DeepSeek-R1-Distill-Llama-8B \
+                      --served-model-name deepseek-r1-distill-llama-8b \
+                      --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both"}'
+                  env:
+                    - name: PYTHONHASHSEED
+                      value: "1047"
+                    - name: VLLM_SERVER_DEV_MODE
+                      value: "1"
+                    - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+                      value: "0.0.0.0"
+                    - name: VLLM_NIXL_SIDE_CHANNEL_PORT
+                      value: "5558"
+                    - name: VLLM_WORKER_MULTIPROC_METHOD
+                      value: spawn
+                    - name: VLLM_ENABLE_V1_MULTIPROCESSING
+                      value: "0"
+                    - name: GLOO_SOCKET_IFNAME
+                      value: eth0
+                    - name: NCCL_SOCKET_IFNAME
+                      value: eth0
+                    - name: NCCL_IB_DISABLE
+                      value: "0"
+                    - name: NCCL_IB_GID_INDEX
+                      value: "7"
+                    - name: NCCL_DEBUG
+                      value: INFO
+                    - name: UCX_TLS
+                      value: ^gga
+                  resources:
+                    limits:
+                      nvidia.com/gpu: 1
+                    requests:
+                      nvidia.com/gpu: 1
+                  securityContext:
+                    capabilities:
+                      add:
+                        - IPC_LOCK
+# =============================================================================
+# Проверка PoC (после kubectl apply):
+#
+#   kubectl get stormservice,roleset,pods -l app=vllm-1p1d
+#     # оба пода на ОДНОЙ ноде: kubectl get pods -o wide -l app=vllm-1p1d
+#   kubectl logs -l app=vllm-1p1d -c prefill | grep -iE 'nixl|kv.transfer|ucx'
+#   kubectl logs -l app=vllm-1p1d -c decode  | grep -iE 'nixl|kv.transfer|ucx'
+#
+#   LB_IP=$(kubectl get svc -n envoy-gateway-system \
+#     -o jsonpath='{.items[?(@.spec.type=="LoadBalancer")].status.loadBalancer.ingress[0].ip}')
+#   curl http://$LB_IP/v1/chat/completions -H "Content-Type: application/json" \
+#     -H "routing-strategy: pd" \
+#     -d '{"model":"deepseek-r1-distill-llama-8b",
+#          "messages":[{"role":"user","content":"Напиши эссе про KV-cache"}]}'
+#
+# Если что-то падает — смотрите §8.5 docs/05-usage-scenarios.md (оговорки:
+# IPC_LOCK/capabilities, egress на Docker Hub, калибровка env под вендора).
+# =============================================================================

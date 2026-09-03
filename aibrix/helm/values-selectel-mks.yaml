@@ -1,0 +1,120 @@
+# =============================================================================
+# AIBrix v0.7.0 — values для Selectel Managed Kubernetes (MKS)
+# =============================================================================
+# Использование (строго ПОВЕРХ официального stable.yaml, который пиннит
+# образы к релизу v0.7.0 — дефолтный values.yaml пиннит теги :nightly):
+#
+#   git clone https://github.com/vllm-project/aibrix.git
+#   cd aibrix && git checkout v0.7.0
+#   kubectl apply -f dist/chart/crds/
+#   helm install aibrix dist/chart \
+#     -f dist/chart/stable.yaml \
+#     -f helm/values-selectel-mks.yaml \
+#     -n aibrix-system --create-namespace
+#
+# Порядок -f важен: побеждает последний файл. Подробности: docs/02-install-mks.md
+# =============================================================================
+
+# --- Экспозиция LLM-шлюза через балансировщик Selectel (Octavia) --------------
+gateway:
+  envoyProxy:
+    replicas: 1                     # дата-план Envoy (прокси); поднимите для продa
+
+    # Envoy Gateway создаёт Service типа LoadBalancer — в MKS это балансировщик
+    # облачной платформы (Octavia) с публичным floating IP.
+    # Форма объекта повторяет EnvoyProxy.spec.provider.kubernetes.envoyService
+    # из Gateway API (поэтому здесь type + annotations, а не «голый» type).
+    service:
+      type: LoadBalancer
+      annotations:
+        # Сохранять floating IP при пересоздании Service (обновления чарта и т.п.)
+        loadbalancer.openstack.org/keep-floatingip: "true"
+
+        # Таймауты Octavia под LLM-стриминг: дефолт облачной платформы
+        # (50000 мс = 50 с на member-data) может обрывать долгие генерации.
+        # Здесь 1 час; значения в миллисекундах.
+        loadbalancer.openstack.org/timeout-client-data: "3600000"
+        loadbalancer.openstack.org/timeout-member-data: "3600000"
+
+        # Внутренний балансировщик (доступ только из приватной сети) — вместо
+        # публичного floating IP раскомментируйте:
+        # service.beta.kubernetes.io/openstack-internal-load-balancer: "true"
+
+        # Явный флейвор балансировщика (uuid из облачной платформы):
+        # loadbalancer.openstack.org/flavor-id: "<uuid>"
+
+# --- gateway-plugins (Go ext_proc: все routing-алгоритмы, rate limiting) ------
+gatewayPlugin:
+  replicaCount: 1
+  container:
+    envs:
+      # Для одной реплики неактуально. При replicaCount > 1 обязательно "true"
+      # (синхронизация состояния prefix-cache между репликами через Redis) —
+      # самая частая ошибка конфигурации HA-шлюза. См. docs/05-usage-scenarios.md
+      AIBRIX_STATESYNC_ENABLED: "false"
+
+# --- Ресурсы -------------------------------------------------------------------
+# Дефолтов чарта достаточно для тестового кластера: контроль-плейн AIBrix
+# полностью CPU-ный и укладывается примерно в ~2.5 vCPU / ~2.5 GiB суммарно
+# (controller-manager 10m/64Mi, gateway-plugin 1/1Gi, metadata 50m/128Mi,
+# gpu-optimizer 10m/64Mi, redis 100m/100Mi, envoy 1/1Gi).
+# Раскомментируйте для override:
+
+# controllerManager:
+#   replicas: 1
+#   container:
+#     resources:
+#       requests: { cpu: 100m, memory: 128Mi }
+#       limits:   { cpu: 500m, memory: 256Mi }
+
+# metadata:
+#   service:
+#     replicas: 1
+#   redis:
+#     enabled: true          # встроенный Redis (aibrix-redis-master, без персистента)
+
+# gpuOptimizer:
+#   replicaCount: 1
+
+# --- Мирринг образов в Container Registry Selectel (опционально) --------------
+# Образы AIBrix живут на Docker Hub (aibrix/*), egress на docker.io в MKS
+# работает (официальные инструкции Selectel сами тянут из docker.io).
+# Если нужно зеркало в CRaaS (cr.selcloud.ru): настройте интеграцию
+# MKS <-> Container Registry (токен инжектится в default SA всех namespace,
+# imagePullSecrets не нужны) и переопределите репозитории:
+
+# global:
+#   imagePullSecrets: []
+
+# controllerManager:
+#   container:
+#     image:
+#       repository: cr.selcloud.ru/<ваш-registry>/aibrix/controller-manager
+#       tag: v0.7.0
+# gatewayPlugin:
+#   container:
+#     image:
+#       repository: cr.selcloud.ru/<ваш-registry>/aibrix/gateway-plugins
+#       tag: v0.7.0
+# gpuOptimizer:
+#   container:
+#     image:
+#       repository: cr.selcloud.ru/<ваш-registry>/aibrix/runtime
+#       tag: v0.7.0
+# metadata:
+#   service:
+#     container:
+#       image:
+#         repository: cr.selcloud.ru/<ваш-registry>/aibrix/metadata-service
+#         tag: v0.7.0
+
+# --- Мониторинг (опционально) --------------------------------------------------
+# Требует установленный kube-prometheus-stack (CRD ServiceMonitor):
+# prometheus:
+#   enable: true
+#
+# Трейсинг Envoy во внешний OTLP-endpoint:
+# openTelemetry:
+#   enable: true
+#   host: otel-collector.observability.svc.cluster.local
+#   port: 4317

@@ -1,0 +1,156 @@
+# =============================================================================
+# База для теста LoRA: Qwen2.5-Coder-1.5B-Instruct + сайдкар aibrix-runtime
+# Источник: aibrix v0.7.0, samples/adapter/base.yaml (версии обновлены, см. docs/04)
+# =============================================================================
+# Инварианты (нарушение любого = маршрутизация/загрузка сломается):
+#   1. model.aibrix.ai/name == имя Service == --served-model-name
+#   2. лейбл adapter.model.aibrix.ai/enabled="true" — в metadata Deployment
+#      И в pod template (так контроллер ModelAdapter находит поды)
+#   3. VLLM_ALLOW_RUNTIME_LORA_UPDATING=True — обязательно (AIBrix не ставит сам)
+#
+# GPU: модель ~3 ГБ bf16 — влезет в любой GPU-нод MKS (даже GTX 1080/T4).
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    model.aibrix.ai/name: qwen-coder-1-5b-instruct
+    model.aibrix.ai/port: "8000"
+    adapter.model.aibrix.ai/enabled: "true" # обязательно для ModelAdapter
+  name: qwen-coder-1-5b-instruct
+  namespace: default
+spec:
+  # 1 реплика — для одиночного GPU-теста. Для надёжности adapter-контроллера
+  # и распределения нескольких LoRA держите 2-3 (или уберите replicas в
+  # ModelAdapter, чтобы адаптер грузился на все поды).
+  replicas: 1
+  selector:
+    matchLabels:
+      model.aibrix.ai/name: qwen-coder-1-5b-instruct
+  template:
+    metadata:
+      labels:
+        model.aibrix.ai/name: qwen-coder-1-5b-instruct
+        adapter.model.aibrix.ai/enabled: "true"
+    spec:
+      containers:
+        - name: vllm-openai
+          image: vllm/vllm-openai:v0.24.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - vllm
+            - serve
+            - --host
+            - "0.0.0.0"
+            - --port
+            - "8000"
+            - --uvicorn-log-level
+            - warning
+            - --model
+            - Qwen/Qwen2.5-Coder-1.5B-Instruct
+            - --served-model-name
+            - qwen-coder-1-5b-instruct
+            - --enable-lora
+            - --max-loras
+            - "4"
+            - --max-cpu-loras
+            - "4"
+          env:
+            # ОБЯЗАТЕЛЬНО: без этого vLLM не поднимет /v1/load_lora_adapter
+            - name: VLLM_ALLOW_RUNTIME_LORA_UPDATING
+              value: "True"
+            # Опционально: терпеливее к медленной загрузке адаптера с HF
+            - name: VLLM_LORA_MODULES_LOADING_TIMEOUT
+              value: "300"
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          volumeMounts:
+            - name: adapter-storage
+              mountPath: /tmp/aibrix/adapters
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+            requests:
+              nvidia.com/gpu: "1"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120 # загрузка весов модели — медленно
+            failureThreshold: 120
+            periodSeconds: 10
+        - name: aibrix-runtime
+          image: aibrix/runtime:v0.7.0
+          command:
+            - aibrix_runtime
+            - --port
+            - "8080"
+          env:
+            - name: INFERENCE_ENGINE
+              value: vllm
+            - name: INFERENCE_ENGINE_ENDPOINT
+              value: http://localhost:8000
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: adapter-storage
+              mountPath: /tmp/aibrix/adapters
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: adapter-storage
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    model.aibrix.ai/name: qwen-coder-1-5b-instruct
+    prometheus-discovery: "true"
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+  # ВАЖНО: имя Service должно совпадать со значением model.aibrix.ai/name
+  name: qwen-coder-1-5b-instruct
+  namespace: default
+spec:
+  ports:
+    - name: serve
+      port: 8000
+      protocol: TCP
+      targetPort: 8000
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    model.aibrix.ai/name: qwen-coder-1-5b-instruct
+  type: ClusterIP

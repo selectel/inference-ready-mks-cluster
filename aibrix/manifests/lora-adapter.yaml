@@ -1,0 +1,48 @@
+# =============================================================================
+# Тестовый LoRA-адаптер: ModelAdapter поверх qwen-coder-1-5b-instruct
+# Источник: aibrix v0.7.0, samples/adapter/adapter.yaml
+# =============================================================================
+# Адаптер: ai-blond/Qwen-Qwen2.5-Coder-1.5B-Instruct-lora
+#   - настоящий PEFT LoRA (adapter_config.json + adapter_model.safetensors ~70 МБ)
+#   - ОБУЧЕН ЧЕРЕЗ UNSLOTH (unsloth/qwen2.5-coder-1.5b-instruct-bnb-4bit как база);
+#     сам org unsloth чистых LoRA-адаптеров не публикует (проверено поиском по HF)
+#   - r=16, alpha=16, таргеты q/k/v/o/gate/up/down proj — vLLM поддерживает
+#     полностью; r=16 влезает в дефолтный --max-lora-rank
+#   - Apache-2.0, публичный, токен HF не нужен
+#
+# Жизненный цикл: Pending -> Scheduled -> Loading -> Bound -> Running
+# Удаление CR = выгрузка адаптера из vLLM + удаление Service/EndpointSlice.
+# =============================================================================
+apiVersion: model.aibrix.ai/v1alpha1
+kind: ModelAdapter
+metadata:
+  name: qwen-code-lora
+  namespace: default
+  labels:
+    model.aibrix.ai/name: "qwen-code-lora"
+    model.aibrix.ai/port: "8000"
+spec:
+  # Базовая модель (значение = model.aibrix.ai/name базового Deployment)
+  baseModel: qwen-coder-1-5b-instruct
+
+  # Селектор подов, способных хостить адаптер: поды должны иметь ОБА лейбла
+  podSelector:
+    matchLabels:
+      model.aibrix.ai/name: qwen-coder-1-5b-instruct
+      adapter.model.aibrix.ai/enabled: "true"
+
+  # Форматы: huggingface://org/repo (публичный HF — vLLM скачает сам),
+  # hf:// (алиас), s3:// / gs:// / tos:// (скачивает runtime-сайдкар,
+  # нужен credentialsSecretRef), /abs/path (NFS/смонтировано вручную)
+  artifactURL: huggingface://ai-blond/Qwen-Qwen2.5-Coder-1.5B-Instruct-lora
+
+  # replicas: опущено = грузить на ВСЕ подходящие поды (рекомендуется);
+  # 1 = только на один (выбирает планировщик). Другие значения отклоняются.
+  # replicas: 1
+
+  # default | least-adapters (распределять адаптеры по подам равномерно)
+  schedulerName: default
+
+  # Если vLLM запущен с --api-key, продублируйте ключ сюда:
+  # additionalConfig:
+  #   api-key: <ключ>
