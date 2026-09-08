@@ -1,0 +1,132 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vllm-inference
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-service
+  namespace: vllm-inference
+spec:
+  selector:
+    app: vllm
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm
+  namespace: vllm-inference
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vllm
+  template:
+    metadata:
+      labels:
+        app: vllm
+    spec:
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          command:
+            - vllm
+            - serve
+            - Qwen/Qwen2.5-3B-Instruct
+            - "--served-model-name"
+            - qwen2.5-3b
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+            - "--enforce-eager"
+            - "--gpu-memory-utilization"
+            - "0.9"
+          ports:
+            - containerPort: 8000
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "16Gi"
+              nvidia.com/gpu: 1
+            limits:
+              memory: "28Gi"
+              nvidia.com/gpu: 1
+          env:
+            - name: VLLM_WORKER_MULTIPROC_METHOD
+              value: "spawn"
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: vllm-gateway-class
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: vllm-gateway
+  namespace: vllm-inference
+spec:
+  gatewayClassName: vllm-gateway-class
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: vllm-route
+  namespace: vllm-inference
+spec:
+  parentRefs:
+    - name: vllm-gateway
+      namespace: vllm-inference
+  hostnames:
+    - "vllm.local"
+  rules:
+    - backendRefs:
+        - name: vllm-service
+          port: 8000
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: vllm-allow
+  namespace: vllm-inference
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: vllm-inference
+  to:
+    - group: ""
+      kind: Service
+      name: vllm-service

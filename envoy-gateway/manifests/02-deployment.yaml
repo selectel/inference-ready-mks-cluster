@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm
+  namespace: vllm-inference
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vllm
+  template:
+    metadata:
+      labels:
+        app: vllm
+    spec:
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          command:
+            - vllm
+            - serve
+            - Qwen/Qwen2.5-3B-Instruct
+            - "--served-model-name"
+            - qwen2.5-3b
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+            - "--enforce-eager"
+            - "--gpu-memory-utilization"
+            - "0.9"
+          ports:
+            - containerPort: 8000
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120
+            periodSeconds: 30
+          resources:
+            requests:
+              memory: "16Gi"
+              nvidia.com/gpu: 1
+            limits:
+              memory: "28Gi"
+              nvidia.com/gpu: 1
+          env:
+            - name: VLLM_WORKER_MULTIPROC_METHOD
+              value: "spawn"
