@@ -1,0 +1,55 @@
+{{- if and .Values.opensearch.enabled .Values.opensearch.cluster.enabled }}
+apiVersion: opensearch.opster.io/v1
+kind: OpenSearchCluster
+metadata:
+  name: opensearch
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: opensearch
+    app.kubernetes.io/part-of: ai-ml-observability
+spec:
+  general:
+    version: {{ .Values.opensearch.version | quote }}
+    httpPort: 9200
+    vendor: opensearch
+    serviceName: {{ .Values.opensearch.serviceName }}
+    setVMMaxMapCount: true
+    drainDataNodes: true
+    additionalConfig:
+      cluster.default_number_of_replicas: {{ .Values.opensearch.defaultIndexReplicas | quote }}
+  security:
+    config:
+      adminCredentialsSecret:
+        name: opensearch-admin-credentials
+      securityConfigSecret:
+        name: opensearch-security-config
+    tls:
+      transport:
+        generate: true
+      http:
+        generate: true
+  dashboards:
+    enable: false
+    version: {{ .Values.opensearch.version | quote }}
+    replicas: 1
+  confMgmt:
+    smartScaler: false
+  nodePools:
+    - component: nodes
+      replicas: {{ .Values.opensearch.replicas }}
+      diskSize: {{ .Values.opensearch.storage.size | quote }}
+      jvm: {{ .Values.opensearch.jvm | quote }}
+      persistence:
+        pvc:
+{{- with .Values.opensearch.storage.className }}
+          storageClass: {{ . | quote }}
+{{- end }}
+          accessModes:
+            - ReadWriteOnce
+      resources:
+{{ toYaml .Values.opensearch.resources | indent 8 }}
+      roles:
+        - cluster_manager
+        - data
+        - ingest
+{{- end }}

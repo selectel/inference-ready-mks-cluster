@@ -1,0 +1,34 @@
+{{- if and .Values.opensearch.enabled (index .Values "prometheus-stack" "enabled") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opensearch-grafana-datasource
+  namespace: {{ .Release.Namespace }}
+  labels:
+    grafana_datasource: "1"
+    app.kubernetes.io/part-of: ai-ml-observability
+data:
+  opensearch.yaml: |-
+    apiVersion: 1
+    datasources:
+      - name: OpenSearch
+        uid: P8ED27CEB897F165F
+        type: grafana-opensearch-datasource
+        access: proxy
+        url: https://{{ .Values.opensearch.serviceName }}.{{ .Release.Namespace }}.svc.cluster.local:9200
+        basicAuth: true
+        basicAuthUser: $__env{OPENSEARCH_USERNAME}
+        editable: false
+        jsonData:
+          database: fluent-bit
+          flavor: opensearch
+          logLevelField: level
+          logMessageField: log
+          maxConcurrentShardRequests: 5
+          pplEnabled: true
+          timeField: "@timestamp"
+          tlsSkipVerify: true
+          version: {{ .Values.opensearch.version | quote }}
+        secureJsonData:
+          basicAuthPassword: $__env{OPENSEARCH_PASSWORD}
+{{- end }}

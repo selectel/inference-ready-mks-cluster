@@ -1,0 +1,14 @@
+{{- if .Values.dashboards.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ray-training-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: ai-ml-observability
+data:
+  ray-train-dashboard.json: |-
+{{ .Files.Get "files/dashboards/ray-train-dashboard.json" | indent 4 }}
+{{- end }}
+

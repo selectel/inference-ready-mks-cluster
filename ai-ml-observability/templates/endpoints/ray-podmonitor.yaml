@@ -1,0 +1,28 @@
+{{- if and .Values.endpoints.enabled .Values.endpoints.ray.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: ray-workers
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: ai-ml-observability
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      ray.io/node-type: worker
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 15s
+      relabelings:
+        - action: replace
+          sourceLabels:
+            - __meta_kubernetes_pod_label_ray_io_cluster
+          targetLabel: ray_io_cluster
+        - action: replace
+          sourceLabels:
+            - __meta_kubernetes_pod_node_name
+          targetLabel: node
+{{- end }}
+

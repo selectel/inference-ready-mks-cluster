@@ -1,0 +1,24 @@
+apiVersion: v2
+name: ai-ml-observability
+description: Prometheus, Grafana, OpenSearch, Fluent Bit and NVIDIA DCGM for AI/ML workloads
+type: application
+version: 0.3.1
+appVersion: "1.0.0"
+
+dependencies:
+  - name: kube-prometheus-stack
+    version: 88.6.3
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: prometheus-stack.enabled
+  - name: opensearch-operator
+    version: 2.8.0
+    repository: https://opensearch-project.github.io/opensearch-k8s-operator/
+    condition: opensearch.enabled
+  - name: fluent-operator
+    version: 4.3.0
+    repository: https://fluent.github.io/helm-charts
+    condition: fluentbit.enabled
+  - name: dcgm-exporter
+    version: 4.8.3
+    repository: https://nvidia.github.io/dcgm-exporter/helm-charts
+    condition: dcgm.enabled
