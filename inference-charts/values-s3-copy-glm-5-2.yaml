@@ -1,0 +1,25 @@
+s3ModelCopy:
+  namespace: default
+  model: zai-org/GLM-5.2
+  s3Bucket: my-models-bucket # S3 bucket name
+  requireLocalDisk: true
+  storageSize: 200 # 35 (fileWorkers) * ~5GB (max size of single file) = 175GB storage
+  parameters:
+    transferClient: "crt"
+    fileWorkers: 35
+  env:
+    # Selectel S3 settings
+    - name: AWS_ENDPOINT_URL
+      value: "https://s3.ru-1.storage.selcloud.ru"
+    - name: AWS_DEFAULT_REGION
+      value: "ru-1"
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: selectel-s3-credentials
+          key: s3-access-key-id
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: selectel-s3-credentials
+          key: s3-secret-access-key

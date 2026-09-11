@@ -1,0 +1,262 @@
+Thank you for installing {{ .Chart.Name }}.
+
+Your release is named {{ .Release.Name }}.
+
+To learn more about the release, try:
+
+  $ helm status {{ .Release.Name }}
+  $ helm get all {{ .Release.Name }}
+
+{{- if and .Values.inference.accelerator .Values.inference.framework }}
+The following service is available:
+
+{{- if eq .Values.inference.framework "vllm" }}
+{{ .Values.inference.accelerator | title }} VLLM Service:
+  $ kubectl get svc {{ .Release.Name }}
+
+  Access the OpenAI-compatible API at:
+  http://{{ .Release.Name }}:{{ .Values.service.port }}/v1/completions
+
+  Example curl command:
+  curl -X POST http://{{ .Release.Name }}:{{ .Values.service.port }}/v1/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "{{ .Values.model }}",
+      "prompt": "Hello, how are you?",
+      "max_tokens": 50
+    }'
+
+  Available API endpoints:
+  - /v1/models - List available models
+  - /v1/completions - Text completion API
+  - /v1/chat/completions - Chat completion API
+  - /metrics - Prometheus metrics endpoint
+{{- end }}
+
+{{- if eq .Values.inference.framework "ray-vllm" }}
+{{ .Values.inference.accelerator | title }} Ray-VLLM Service:
+  $ kubectl get svc {{ .Values.inference.serviceName }}-head-svc
+
+  Access the OpenAI-compatible API at:
+  http://{{ .Values.inference.serviceName }}-head-svc:{{ .Values.service.port }}/v1/chat/completions
+
+  Example curl command:
+  curl -X POST http://{{ .Values.inference.serviceName }}-head-svc:{{ .Values.service.port }}/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "{{ .Values.model }}",
+      "messages": [{"role": "user", "content": "Hello, how are you?"}],
+      "max_tokens": 50
+    }'
+
+  Available API endpoints:
+  - /v1/models - List available models
+  - /v1/completions - Text completion API
+  - /v1/chat/completions - Chat completion API (requires a chat template)
+  - /metrics - Prometheus metrics endpoint
+{{- end }}
+
+{{- if eq .Values.inference.framework "nim-container" }}
+NVIDIA NIM Container Deployment:
+
+Service: {{ .Values.inference.serviceName }}
+Namespace: {{ .Values.inference.serviceNamespace }}
+
+IMPORTANT: NIM deployments take time to become ready:
+- LLM models (like Llama): 10-15 minutes
+- Diffusion models (like Stable Diffusion): 20-30 minutes
+
+Monitor deployment progress:
+  $ kubectl logs -f deployment/{{ .Values.inference.serviceName }} -n {{ .Values.inference.serviceNamespace }}
+
+Check when ready:
+  $ kubectl get deployment {{ .Values.inference.serviceName }} -n {{ .Values.inference.serviceNamespace }}
+
+Test the deployment:
+  $ kubectl port-forward svc/{{ .Values.inference.serviceName }} -n {{ .Values.inference.serviceNamespace }} 8000:8000
+
+{{- if contains "stable-diffusion" .Values.model }}
+Example curl command to test image generation:
+
+curl -X POST http://localhost:8000/v1/infer \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "A simple coffee shop interior",
+    "mode": "base",
+    "seed": 0,
+    "steps": 10
+  }'
+{{- else }}
+Example curl command to test chat completion:
+
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "{{ .Values.model }}",
+    "messages": [{"role": "user", "content": "What is AI?"}],
+    "max_tokens": 100
+  }'
+{{- end }}
+{{- end }}
+
+{{- if eq .Values.inference.framework "triton-vllm" }}
+Triton-VLLM Service:
+  $ kubectl get svc {{ .Values.inference.serviceName }} -n {{ .Values.inference.serviceNamespace }}
+
+  This deployment runs NVIDIA Triton Inference Server with a vLLM backend.
+  It exposes the Triton API, NOT the OpenAI API:
+
+  Ports:
+    HTTP:    {{ .Values.inference.serviceName }}:8000
+    gRPC:    {{ .Values.inference.serviceName }}:8001
+    Metrics: {{ .Values.inference.serviceName }}:8002
+
+  List loaded models:
+  $ curl -X POST http://{{ .Values.inference.serviceName }}:8000/v2/repository/index
+  $ curl http://{{ .Values.inference.serviceName }}:8000/v2/models/vllm_model
+
+  Check server readiness (waits for model to be READY):
+  $ curl http://{{ .Values.inference.serviceName }}:8000/v2/health/ready
+
+  Example inference request (gRPC streaming on port 8001 — required because the
+  vLLM backend declares the model as decoupled; plain HTTP/gRPC infer is NOT
+  supported by this backend):
+  pip3 install 'tritonclient[grpc]'
+
+  python3 - <<'EOF'
+  import time
+  import numpy as np
+  import tritonclient.grpc as grpcclient
+
+  client = grpcclient.InferenceServerClient(url="{{ .Values.inference.serviceName }}:8001")
+
+  def on_result(result, error):
+      if error:
+          print("ERR:", error)
+          return
+      out = result.as_numpy("text_output")
+      if out is not None:
+          for row in out:
+              print("OUT:", row.decode() if isinstance(row, bytes) else row)
+
+  client.start_stream(on_result)
+  inp = grpcclient.InferInput("text_input", [1], "BYTES")
+  inp.set_data_from_numpy(np.array(["Hello, how are you?"], dtype=np.object_))
+  stream_in = grpcclient.InferInput("stream", [1], "BOOL")
+  stream_in.set_data_from_numpy(np.array([True], dtype=bool))
+  samp_in = grpcclient.InferInput("sampling_parameters", [1], "BYTES")
+  samp_in.set_data_from_numpy(np.array(['{"temperature":0.7,"max_tokens":50}'], dtype=np.object_))
+  client.async_stream_infer("vllm_model", [inp, stream_in, samp_in])
+  time.sleep(5)
+  client.stop_stream()
+  EOF
+
+  Prometheus metrics:
+  $ curl http://{{ .Values.inference.serviceName }}:8002/metrics
+
+{{- end }}
+{{- if eq .Values.inference.framework "nim-operator" }}
+NVIDIA NIM Operator Deployment:
+
+Namespace: {{ .Values.inference.serviceNamespace }}
+Service Name: {{ .Values.inference.serviceName }}
+
+Step 1 - Create the NIMCache to download and cache the model:
+  $ kubectl get nimcache {{ .Values.inference.serviceName }} -n {{ .Values.inference.serviceNamespace }}
+
+  Wait for the cache to be ready:
+  $ kubectl wait --for=condition=Ready nimcache/{{ .Values.inference.serviceName }} -n {{ .Values.inference.serviceNamespace }} --timeout=600s
+
+Step 2 - Deploy the NIMService that serves the cached model:
+  $ kubectl get nimservice {{ .Values.inference.serviceName }} -n {{ .Values.inference.serviceNamespace }}
+
+  Wait for the service to be ready:
+  $ kubectl wait --for=condition=Ready nimservice/{{ .Values.inference.serviceName }} -n {{ .Values.inference.serviceNamespace }} --timeout=600s
+
+Check status:
+  $ kubectl get nimcache,nimservice -n {{ .Values.inference.serviceNamespace }}
+
+Once the NIMService is running, you can test the API:
+  $ kubectl port-forward svc/{{ .Values.inference.serviceName }} -n {{ .Values.inference.serviceNamespace }} 8000:8000
+
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "{{ .Values.model | default "default" }}",
+    "messages": [{"role": "user", "content": "What is AI?"}],
+    "max_tokens": 100
+  }'
+
+{{- end }}
+{{- if or (eq .Values.inference.framework "aibrix") (eq .Values.inference.framework "lws-vllm") }}
+{{ .Values.inference.accelerator | title }} VLLM Service:
+  $ kubectl get svc {{ .Values.inference.serviceName }} -n {{ .Values.inference.serviceNamespace }}
+
+  Access the OpenAI-compatible API at:
+  http://{{ .Values.inference.serviceName }}:{{ .Values.service.port }}/v1/completions
+
+  Example curl command:
+  curl -X POST http://{{ .Values.inference.serviceName }}:{{ .Values.service.port }}/v1/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "{{ .Values.inference.serviceName }}",
+      "prompt": "Hello, how are you?",
+      "max_tokens": 50
+    }'
+
+  Available API endpoints:
+  - /v1/models - List available models
+  - /v1/completions - Text completion API
+  - /v1/chat/completions - Chat completion API (requires a chat template)
+  - /metrics - Prometheus metrics endpoint
+
+{{- else if eq .Values.inference.framework "diffusers" }}
+Diffusers Service: {{ .Values.inference.serviceName }}
+  $ kubectl get svc {{ .Values.inference.serviceName }} -n {{ .Values.inference.serviceNamespace }}
+  $ kubectl logs -f deployment/{{ .Values.inference.serviceName }} -n {{ .Values.inference.serviceNamespace }}
+
+  Service port: {{ .Values.service.port }}
+
+  Example curl command:
+  curl -X POST http://{{ .Values.inference.serviceName }}:{{ .Values.service.port }}/v1/generations \
+    -H "Content-Type: application/json" \
+    -d '{
+      "prompt": "A beautiful sunset over mountains"
+    }' --output picture.png
+
+  Available API endpoints:
+  - /v1/generations - Image generation API
+  - /docs - Interactive API documentation (Swagger UI)
+{{- end }}
+{{- else }}
+No inference service was enabled. Please set both accelerator and framework values:
+
+- inference.accelerator: gpu
+- inference.framework: vllm, ray-vllm, triton-vllm, diffusers, lws-vllm, aibrix, nim-container, or nim-operator
+
+For example:
+  $ helm upgrade {{ .Release.Name }} . --set inference.accelerator=gpu --set inference.framework=vllm
+{{- end }}
+
+{{- if .Values.s3ModelCopy.model }}
+
+S3 Model Copy Job:
+
+  Model: {{ .Values.s3ModelCopy.model }}
+  Destination: s3://{{ .Values.s3ModelCopy.s3Bucket }}/{{ .Values.s3ModelCopy.s3Prefix | default .Values.s3ModelCopy.model }}
+  Namespace: {{ .Values.s3ModelCopy.namespace }}
+  Job Name: {{ include "inference-charts.s3ModelCopyName" . }}
+
+Track progress:
+  $ kubectl logs -f -l app.kubernetes.io/name=s3-model-copy,app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Values.s3ModelCopy.namespace }}
+
+Check job status:
+  $ kubectl get job {{ include "inference-charts.s3ModelCopyName" . }} -n {{ .Values.s3ModelCopy.namespace }}
+
+Wait for completion:
+  $ kubectl wait --for=condition=Complete job/{{ include "inference-charts.s3ModelCopyName" . }} -n {{ .Values.s3ModelCopy.namespace }} --timeout=3600s
+
+Once the job completes successfully, you can uninstall this release:
+  $ helm uninstall {{ .Release.Name }} -n {{ .Values.s3ModelCopy.namespace }}
+{{- end }}

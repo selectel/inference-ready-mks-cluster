@@ -1,0 +1,17 @@
+model: Shitao/OmniGen-v1-diffusers
+
+modelParameters:
+  pipeline: omnigen
+
+inference:
+  serviceName: omni-gen-diffusers
+  serviceNamespace: default
+  accelerator: gpu
+  framework: diffusers
+
+  modelServer:
+    image:
+      repository: docker-registry.selectel.ru/diffusers/diffusers-pytorch-cuda
+      tag: latest
+    deployment:
+      instanceType: GL14.12-65536-1GPU

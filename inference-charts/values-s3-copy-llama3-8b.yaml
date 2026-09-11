@@ -1,0 +1,20 @@
+s3ModelCopy:
+  namespace: default
+  model: NousResearch/Meta-Llama-3-8B-Instruct
+  s3Bucket: my-models-bucket # S3 bucket name
+  env:
+    # Selectel S3 settings
+    - name: AWS_ENDPOINT_URL
+      value: "https://s3.ru-1.storage.selcloud.ru"
+    - name: AWS_DEFAULT_REGION
+      value: "ru-1"
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: selectel-s3-credentials
+          key: s3-access-key-id
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: selectel-s3-credentials
+          key: s3-secret-access-key

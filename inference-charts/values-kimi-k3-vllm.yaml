@@ -1,0 +1,49 @@
+model: moonshotai/Kimi-K3
+
+extraLabels:
+  ai/name: kimi-k3-vllm
+
+modelParameters:
+  trustRemoteCode: true
+  moeBackend: auto
+  gpuMemoryUtilization: "0.9"
+  tensorParallelSize: "8"
+  maxModelLen: "1000000"
+  kvCacheDtype: fp8
+  maxNumBatchedTokens: "32768"
+  enablePrefixCaching: true
+  enableAutoToolChoice: true
+  toolCallParser: kimi_k3
+  reasoningParser: kimi_k3
+
+inference:
+  serviceName: kimi-k3-vllm
+  serviceNamespace: default
+  accelerator: gpu
+  framework: vllm
+  modelServer:
+    image:
+      repository: docker-registry.selectel.ru/vllm/vllm-openai
+      tag: kimi-k3
+    env:
+      VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION: 1
+      VLLM_ALLREDUCE_USE_FLASHINFER: 1
+      VLLM_ENGINE_READY_TIMEOUT_S: 3600
+      VLLM_USE_V2_MODEL_RUNNER: 1
+      VLLM_USE_RUST_FRONTEND: 0
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+    deployment:
+      instanceType: GL22.240-1024000-8GPU
+      sharedMemory: 50Gi
+      resources:
+        gpu:
+          requests:
+            nvidia.com/gpu: 8
+          limits:
+            nvidia.com/gpu: 8
+      startupProbe:
+        failureThreshold: 600
+        periodSeconds: 10
+        httpGet:
+          path: /health
+          port: 8000

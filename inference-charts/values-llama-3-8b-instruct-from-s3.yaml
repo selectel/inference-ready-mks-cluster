@@ -1,0 +1,62 @@
+# for private s3 model
+inference:
+  accelerator: gpu
+  framework: vllm   # or ray-vllm, triton-vllm, aibrix, or diffusers
+
+  # Ray-specific options (only for ray-vllm framework)
+  rayOptions:
+    rayVersion: 2.47.0
+    autoscaling:
+      enabled: false
+      upscalingMode: "Default"
+      idleTimeoutSeconds: 60
+      actorAutoscaling:
+        minActors: 1
+        maxActors: 1
+    observability:
+      rayPrometheusHost: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+      rayGrafanaHost: http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local
+      rayGrafanaIframeHost: http://localhost:3000
+
+  modelServer:
+    # For Ray deployments, specify VLLM and Python versions
+    vllmVersion: 0.9.1
+    pythonVersion: 3.11
+    image:
+      repository: docker-registry.selectel.ru/vllm/vllm-openai  # Use rayproject/ray for Ray deployments
+      tag: latest
+    deployment:
+      replicas: 1
+      minReplicas: 1
+      maxReplicas: 2
+      resources:
+        gpu:
+          requests:
+            nvidia.com/gpu: 1
+          limits:
+            nvidia.com/gpu: 1
+    env:
+      # Selectel S3 settings — container mks-7325-inference-3 (ru-1), PATH-STYLE addressing
+      AWS_ENDPOINT_URL: "https://s3.ru-1.storage.selcloud.ru"
+      AWS_DEFAULT_REGION: "ru-1"
+      # for PATH-STYLE container's path in S3
+      RUNAI_STREAMER_S3_USE_VIRTUAL_ADDRESSING: "0"
+    # S3 credentials from Kubernetes Secret (plain text removed from env)
+    s3CredentialsSecret:
+      name: selectel-s3-credentials
+      accessKeyIdKey: s3-access-key-id
+      secretAccessKeyKey: s3-secret-access-key
+
+model: "NousResearch/Meta-Llama-3-8B-Instruct"
+modelPath: 's3://my-models-bucket/NousResearch/Meta-Llama-3-8B-Instruct'
+
+modelParameters:
+  gpuMemoryUtilization: 0.8
+  maxModelLen: 8192
+  maxNumSeqs: 4
+  maxNumBatchedTokens: 8192
+  maxParallelLoadingWorkers: 2
+  pipelineParallelSize: 1
+  tensorParallelSize: 1
+  enablePrefixCaching: true
+  enforceEager: true

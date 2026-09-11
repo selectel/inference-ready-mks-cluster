@@ -1,0 +1,20 @@
+model: NousResearch/Llama-3.2-1B
+
+modelParameters:
+  maxModelLen: 8192
+
+inference:
+  serviceName: llama-32-1b-ray-vllm
+  serviceNamespace: default
+  accelerator: gpu
+  framework: ray-vllm
+
+  rayOptions:
+    rayVersion: 2.47.0
+
+  modelServer:
+    vllmVersion: 0.9.1
+    pythonVersion: 3.11
+    image:
+      repository: docker-registry.selectel.ru/rayproject/ray
+      tag: 2.47.0-py311

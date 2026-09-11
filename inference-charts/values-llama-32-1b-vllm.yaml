@@ -1,0 +1,17 @@
+model: NousResearch/Llama-3.2-1B
+
+modelParameters:
+  maxModelLen: 8192
+
+inference:
+  serviceName: llama-32-1b-vllm
+  serviceNamespace: default
+  accelerator: gpu
+  framework: vllm
+
+  modelServer:
+    image:
+      repository: ghcr-registry.selectel.ru/selectel/inference-ready-mks-cluster/vllm
+      tag: 0.10.2-gpu-py312-ec2
+    env:
+      VLLM_USE_FLASHINFER_SAMPLER: "0"

@@ -1,0 +1,17 @@
+model: Qwen/Qwen3-1.7B
+
+modelParameters:
+  maxModelLen: 8192
+
+inference:
+  serviceName: qwen3-1-7b-vllm
+  serviceNamespace: default
+  accelerator: gpu
+  framework: vllm
+
+  modelServer:
+    image:
+      repository: ghcr-registry.selectel.ru/selectel/inference-ready-mks-cluster/vllm
+      tag: 0.10.2-gpu-py312-ec2
+    env:
+      VLLM_USE_FLASHINFER_SAMPLER: "0"
