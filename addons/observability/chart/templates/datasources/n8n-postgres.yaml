@@ -1,0 +1,32 @@
+{{- if .Values.n8nDatasource.enabled }}
+# Postgres-датасорс для SQL-дашборда n8n (grafana.com/24475: Workflow &
+# Execution Analytics читает БД n8n напрямую). Пароль — env N8N_DB_PASSWORD
+# из Secret n8n-db-readonly (копия n8n-db-app, создаёт terraform).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: n8n-postgres-datasource
+  namespace: {{ .Release.Namespace }}
+  labels:
+    grafana_datasource: "1"
+    app.kubernetes.io/part-of: ai-ml-observability
+data:
+  n8n-postgres.yaml: |-
+    apiVersion: 1
+    datasources:
+      - name: n8n-postgres
+        uid: n8n-postgres
+        type: postgres
+        access: proxy
+        url: {{ .Values.n8nDatasource.host }}:{{ .Values.n8nDatasource.port }}
+        user: {{ .Values.n8nDatasource.user }}
+        isDefault: false
+        editable: false
+        jsonData:
+          database: {{ .Values.n8nDatasource.database }}
+          sslmode: require
+          postgresVersion: 1800
+          timescaledb: false
+        secureJsonData:
+          password: $__env{N8N_DB_PASSWORD}
+{{- end }}

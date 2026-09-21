@@ -1,0 +1,25 @@
+# To integrate with Prometheus.
+{{- if .Values.prometheus.enable }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    {{- include "aibrix.labels" . | nindent 4 }}
+    control-plane: controller-manager
+  name: {{ include "aibrix.fullname" . }}-controller-manager-metrics
+spec:
+  # ЛОКАЛЬНЫЙ ПАТЧ (v0.7.0): Service контроллера объявляет порт "http" (8080),
+  # а не "https" — апстримовский `port: https` не матчится, и Prometheus не
+  # создаёт таргет. Метрики отдаются обычным HTTP на :8080 (kube-rbac-proxy
+  # в сборке не используется), поэтому scheme/bearer-токен не нужны.
+  # При обновлении чарта патч перенести.
+  endpoints:
+    - path: /metrics
+      port: http
+  # ЛОКАЛЬНЫЙ ПАТЧ (v0.7.0), продолжение: Service контроллера НЕ имеет
+  # лейбла control-plane=controller-manager (у него component=aibrix-
+  # controller-manager), апстримовский селектор не матчит ничего.
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: aibrix-controller-manager
+{{- end }}

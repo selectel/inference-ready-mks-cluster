@@ -1,0 +1,91 @@
+Thank you for installing {{ .Chart.Name }}.
+
+Your release is named {{ .Release.Name }}.
+
+To learn more about the release, try:
+
+  $ helm status {{ .Release.Name }}
+  $ helm get all {{ .Release.Name }}
+
+{{- if and .Values.inference.accelerator .Values.inference.framework }}
+The following service is available:
+
+{{- if eq .Values.inference.framework "vllm" }}
+{{ .Values.inference.accelerator | title }} VLLM Service:
+  $ kubectl get svc {{ .Release.Name }}
+
+  Access the OpenAI-compatible API at:
+  http://{{ .Release.Name }}:{{ .Values.service.port }}/v1/chat/completions
+{{- end }}
+
+{{- if eq .Values.inference.framework "llama-cpp" }}
+{{ .Values.inference.accelerator | title }} llama.cpp Service:
+  $ kubectl get svc {{ .Release.Name }}
+
+  Access the OpenAI-compatible API at:
+  http://{{ .Values.inference.serviceName }}:{{ .Values.service.port }}/v1/chat/completions
+{{- end }}
+
+{{- if eq .Values.inference.framework "ray-vllm" }}
+{{ .Values.inference.accelerator | title }} Ray-VLLM Service:
+  $ kubectl get svc {{ .Release.Name }}
+
+  Access the OpenAI-compatible API at:
+  http://{{ .Release.Name }}-{{ .Values.inference.accelerator }}-ray-vllm:{{ .Values.service.port }}/v1/chat/completions
+{{- end }}
+
+{{- if not (has .Values.inference.framework (list "vllm" "llama-cpp" "ray-vllm")) }}
+Example curl command to test the API:
+
+curl -X POST \
+  http://<SERVICE_NAME>:{{ .Values.service.port }}/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "default",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hello, how are you?"
+      }
+    ],
+    "temperature": 0.7,
+    "max_tokens": 100
+  }'
+
+Available API endpoints:
+- /v1/models - List available models
+- /v1/completions - Text completion API
+- /v1/chat/completions - Chat completion API
+- /metrics - Prometheus metrics endpoint
+{{- end }}
+{{- else }}
+No inference service was enabled. Please set both accelerator and framework values:
+
+- inference.accelerator: gpu
+- inference.framework: vllm, ray-vllm, triton-vllm, diffusers, lws-vllm, aibrix, or llama-cpp
+
+For example:
+  $ helm upgrade {{ .Release.Name }} . --set inference.accelerator=gpu --set inference.framework=vllm
+{{- end }}
+
+{{- if .Values.s3ModelCopy.model }}
+
+S3 Model Copy Job:
+
+  Model: {{ .Values.s3ModelCopy.model }}
+  Destination: s3://{{ .Values.s3ModelCopy.s3Bucket }}/{{ .Values.s3ModelCopy.s3Prefix | default .Values.s3ModelCopy.model }}
+  Namespace: {{ .Values.s3ModelCopy.namespace }}
+  Job Name: {{ include "inference-charts.s3ModelCopyName" . }}
+
+Track progress:
+  $ kubectl logs -f -l app.kubernetes.io/name=s3-model-copy,app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Values.s3ModelCopy.namespace }}
+
+Check job status:
+  $ kubectl get job {{ include "inference-charts.s3ModelCopyName" . }} -n {{ .Values.s3ModelCopy.namespace }}
+
+Wait for completion:
+  $ kubectl wait --for=condition=Complete job/{{ include "inference-charts.s3ModelCopyName" . }} -n {{ .Values.s3ModelCopy.namespace }} --timeout=3600s
+
+Once the job completes successfully, you can uninstall this release:
+  $ helm uninstall {{ .Release.Name }} -n {{ .Values.s3ModelCopy.namespace }}
+{{- end }}

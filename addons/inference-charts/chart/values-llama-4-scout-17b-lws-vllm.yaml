@@ -1,0 +1,27 @@
+model: meta-llama/Llama-4-Scout-17B-16E-Instruct
+
+modelParameters:
+  gpuMemoryUtilization: 0.8
+  maxModelLen: 1024
+  maxNumSeqs: 1
+  maxNumBatchedTokens: 8192
+  pipelineParallelSize: 2
+  tensorParallelSize: 8
+
+inference:
+  serviceName: llama-4-scout-17b-lws-vllm
+  serviceNamespace: default
+  accelerator: gpu
+  framework: lws-vllm
+  modelServer:
+    image:
+      repository: vllm/vllm-openai
+      tag: 0.10.2-gpu-py312-ec2
+    deployment:
+      resources:
+        gpu:
+          requests:
+            nvidia.com/gpu: 8
+          limits:
+            nvidia.com/gpu: 8
+      # Selectel: выбор карты — gpuNames/gpuMinVramGb (instanceType апстрима)

@@ -1,0 +1,29 @@
+# Values dex для Selectel MKS (чарт dexidp/dex, remote-репо charts.dexidp.io).
+# Применяется terraform-корнём infra/02-addons (тумблер install_dex).
+# Конфиг (issuer, staticClients, staticPasswords) — НЕ здесь, а в Secret
+# dex-config: его рендерит terraform из addons/dex/manifests/config.yaml.tpl
+# (там секретные client-secret'ы, в values их держать нельзя — значения
+# чарта пишутся в helm-релиз).
+
+replicaCount: 1
+
+# Полный конфиг приходит из секрета dex-config (создаёт terraform).
+configSecret:
+  create: false
+  name: dex-config
+
+service:
+  type: ClusterIP
+
+# Публичный вход — только через edge-шлюз (HTTPRoute, addons/dex/manifests/).
+# Внешних коннекторов нет — RBAC для kubernetes-storage не нужен.
+
+nodeSelector:
+  nodegroup: system # GPU-ноды Karpenter — мимо
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi

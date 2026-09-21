@@ -1,0 +1,60 @@
+# NodePool: GPU RTX 6000 Pro 96 GB — 32–70B без HBM-бюджета H100/H200.
+# Зоны (матрица доступности Selectel, регион ru-7): ru-7a, ru-7b.
+# ВАЖНО (не проверено): значения instance-gpu-name — label без пробелов; точное
+# написание знает только провайдер, поэтому перечислены варианты. Несовпавший
+# вариант безвреден (просто не матчится). После первой поднятой ноды сверьте:
+# kubectl describe node | grep instance-gpu-name — и оставьте совпавший вариант.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: gpu-rtx6000-pro
+spec:
+  # Приоритет при выборе пула (больше = предпочтительнее).
+  # По умолчанию предпочитаем ДЕШЁВЫЙ GPU (меньше VRAM = выше вес):
+  # под без селектора получает наименее дорогой подходящий пул.
+  # Тяжёлые модели адресуются явным nodeSelector: {gpu: <имя>}.
+  weight: 20
+  template:
+    metadata:
+      labels:
+        workload: inference
+        gpu: rtx6000-pro
+        # VRAM карты (ГБ) — для nodeAffinity (Gt) из inference-charts
+        gpu-vram: "96"
+    spec:
+      nodeClassRef:
+        name: default
+        kind: SelectelNodeClass
+        group: karpenter.k8s.selectel
+      # expireAfter — поле template.spec (в spec.disruption его в karpenter.sh/v1 НЕТ).
+      expireAfter: 720h
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: ["ru-7a", "ru-7b"]   # поправьте под свой сегмент
+        - key: karpenter.k8s.selectel/instance-category
+          operator: In
+          values: ["GL"]
+        - key: karpenter.k8s.selectel/instance-gpu-name
+          operator: In
+          values: ["RTX6000PRO"]   # проверено 2026-09-21: имя флейвора из бинарника karpenter v0.4.0, нода поднята
+        - key: karpenter.k8s.selectel/instance-gpu-count
+          operator: Gt
+          values: ["0"]
+      # startupTaints для Cilium-кластеров (MKS по умолчанию — Calico):
+      #   - key: node.cilium.io/agent-not-ready
+      #     value: "true"
+      #     effect: NoExecute
+      #   - key: node.cilium.io/agent-not-ready
+      #     effect: NoSchedule
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    # Для GPU-нод не спешим консолидировать: холодный старт = загрузка модели.
+    consolidateAfter: 15m
+  limits:
+    # Лимит на ВСЕ ноды пула суммарно. Квота ускорителей по умолчанию — 32 на зону.
+    cpu: "96"
+    memory: 512Gi

@@ -1,0 +1,15 @@
+dependencies:
+- name: kube-prometheus-stack
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 88.6.3
+- name: opensearch-operator
+  repository: https://opensearch-project.github.io/opensearch-k8s-operator/
+  version: 2.8.0
+- name: fluent-operator
+  repository: https://fluent.github.io/helm-charts
+  version: 4.3.0
+- name: dcgm-exporter
+  repository: https://nvidia.github.io/dcgm-exporter/helm-charts
+  version: 4.8.3
+digest: sha256:d4787fb0715be0649aede460af708a0d3a251e5d61906aaf02d47760af5caa95
+generated: "2026-09-03T11:50:59.987096+03:00"

@@ -1,0 +1,308 @@
+prometheus-stack:
+  enabled: true
+
+opensearch:
+  enabled: true
+  cluster:
+    enabled: true
+  version: 2.19.6
+  replicas: 2
+  defaultIndexReplicas: 0
+  serviceName: opensearch
+  credentials:
+    adminUsername: admin
+    adminPassword: admin123
+    dashboardUserPassword: admin123
+  # OpenSearch Dashboards (web-UI для логов, управляет оператор через
+  # OpenSearchCluster.spec.dashboards). Вход в UI — пользователь
+  # dashboard_user (см. credentials.yaml), пароль — Secret
+  # opensearch-dashboard-credentials.
+  # OIDC (dex) для UI-входа в OpenSearch Dashboards. connectUrl/secret
+  # передаются terraform (домен и client_secret — только в state).
+  oidc:
+    enabled: false
+    connectUrl: ""
+    clientId: opensearch-dashboards
+    clientSecret: ""
+    baseRedirectUrl: ""
+  dashboards:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+  storage:
+    className: fast2.ru-6
+    size: 5Gi
+  jvm: -Xms512m -Xmx512m
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+fluentbit:
+  enabled: true
+
+dcgm:
+  enabled: true
+  runtimeClassName: nvidia
+  runtimeClass:
+    create: true
+    handler: nvidia
+
+endpoints:
+  enabled: true
+  vllm:
+    enabled: true
+    selectorLabels:
+      observability.ai/vllm: "true"
+  ray:
+    enabled: true
+  # --- Дополнения Selectel MKS ---
+  litellm:
+    # /metrics включается litellm_settings.callbacks=["prometheus"] в values litellm
+    enabled: true
+    namespace: litellm
+    # Секрет с Bearer для /metrics: копия litellm-masterkey в ns monitoring
+    authSecret:
+      name: litellm-masterkey
+      key: masterkey
+  aibrix:
+    # gateway-plugin :8080/metrics, включён всегда
+    enabled: true
+    namespace: aibrix-system
+  dcgm:
+    # Экспортер ставит GPU Operator (ns gpu-operator) — тут только монитор
+    enabled: true
+    namespace: gpu-operator
+  envoy:
+    # Envoy data-plane aibrix (ns envoy-gateway-system, поды Gateway aibrix-eg)
+    enabled: true
+    namespace: envoy-gateway-system
+
+# Postgres-датасорс Grafana для SQL-дашборда n8n (grafana.com/24475)
+n8nDatasource:
+  enabled: true
+  host: n8n-db-rw.n8n.svc.cluster.local
+  port: 5432
+  database: n8n
+  user: app
+
+dashboards:
+  enabled: true
+
+kube-prometheus-stack:
+  fullnameOverride: kube-prometheus-stack
+
+  prometheusOperator:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 300m
+        memory: 384Mi
+
+  prometheus:
+    prometheusSpec:
+      retention: 2d
+      retentionSize: 4GB
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+      serviceMonitorNamespaceSelector: {}
+      podMonitorNamespaceSelector: {}
+      ruleNamespaceSelector: {}
+      resources:
+        requests:
+          cpu: 250m
+          memory: 768Mi
+        limits:
+          cpu: "1"
+          memory: 2Gi
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: fast2.ru-6
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 5Gi
+
+  alertmanager:
+    alertmanagerSpec:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      storage:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: fast2.ru-6
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Gi
+
+  grafana:
+    fullnameOverride: kube-prometheus-stack-grafana
+    deploymentStrategy:
+      type: Recreate
+      rollingUpdate: null
+    persistence:
+      enabled: true
+      storageClassName: fast2.ru-6
+      accessModes:
+        - ReadWriteOnce
+      size: 1Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 768Mi
+    plugins:
+      - grafana-opensearch-datasource
+    envValueFrom:
+      OPENSEARCH_USERNAME:
+        secretKeyRef:
+          name: opensearch-dashboard-credentials
+          key: username
+      OPENSEARCH_PASSWORD:
+        secretKeyRef:
+          name: opensearch-dashboard-credentials
+          key: password
+    sidecar:
+      dashboards:
+        enabled: true
+        label: grafana_dashboard
+        labelValue: "1"
+      datasources:
+        enabled: true
+        label: grafana_datasource
+        labelValue: "1"
+
+fluent-operator:
+  containerRuntime: containerd
+  Kubernetes: true
+  operator:
+    serviceMonitor:
+      enable: false
+  fluentbit:
+    enable: true
+    serviceMonitor:
+      enable: true
+      interval: 30s
+    tolerations:
+      - operator: Exists
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 300m
+        memory: 256Mi
+    input:
+      tail:
+        enable: true
+        path: /var/log/containers/*.log
+        memBufLimit: 10MB
+        skipLongLines: true
+        skipEmptyLines: true
+        readFromHead: false
+        storageType: filesystem
+        multilineParser: docker, cri
+      systemd:
+        enable: true
+        includeKubelet: true
+        storageType: filesystem
+    filter:
+      kubernetes:
+        enable: true
+        labels: true
+        annotations: false
+      containerd:
+        enable: true
+    service:
+      storage:
+        path: /fluent-bit/tail
+        backlogMemLimit: 20MB
+        maxChunksUp: 64
+        metrics: "on"
+        sync: normal
+    output:
+      opensearch:
+        host: opensearch
+        port: 9200
+        index: fluent-bit
+        generateID: true
+        suppressTypeName: true
+        replaceDots: true
+        bufferSize: 2MB
+        totalLimitSize: 500MB
+        workers: 1
+        traceError: true
+        httpUser:
+          valueFrom:
+            secretKeyRef:
+              name: opensearch-admin-credentials
+              key: username
+        httpPassword:
+          valueFrom:
+            secretKeyRef:
+              name: opensearch-admin-credentials
+              key: password
+        tls:
+          verify: false
+
+opensearch-operator:
+  fullnameOverride: opensearch-operator
+  installCRDs: false
+  manager:
+    watchNamespace: ""
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 384Mi
+  useRoleBindings: false
+  kubeRbacProxy:
+    enable: true
+
+dcgm-exporter:
+  runtimeClassName: nvidia
+  nodeSelector:
+    nvidia.com/gpu: "true"
+  tolerations:
+    - operator: Exists
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 25s
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 512Mi
+
+# --- Дополнения Selectel MKS (сверх апстрим-чарта) ---
+# Базовые алерты AI-нагрузок (templates/rules/ai-workloads.yaml)
+rules:
+  enabled: true

@@ -1,0 +1,37 @@
+# =============================================================================
+# Модель: Qwen/Qwen3-32B из S3 (замена addons/models/vllm-qwen3-32b.yaml).
+# Веса — из S3-контейнера (PVC models): алиас Qwen3-32B в hf_models
+# (blueprint.tfvars) → Job hf-models-upload (terraform, 02-addons).
+#
+# GPU: bf16-веса 32B (~65 ГБ) — только карты ≥80 ГБ (H200 141 ГБ в ru-6);
+# после H200 остаётся ~70 ГБ на KV-кэш (max-model-len 32768).
+# Выбор карты — gpuMinVramGb: Karpenter берёт самую дешёвую из подходящих
+# по VRAM (лейбл gpu-vram на GPU-пулах, addons/karpenter/).
+# =============================================================================
+model: qwen3-32b
+modelPath: /models/Qwen3-32B
+
+inference:
+  serviceName: qwen3-32b
+  modelServer:
+    deployment:
+      replicas: 1
+      resources:
+        gpu:
+          requests:
+            cpu: 8
+            memory: 48Gi
+            nvidia.com/gpu: 1
+          limits:
+            nvidia.com/gpu: 1
+
+modelParameters:
+  host: 0.0.0.0
+  port: "8000"
+  max-model-len: "32768"
+  # Tool calling (OpenWebUI шлёт tool_choice="auto"): Qwen3 — hermes-стиль
+  enable-auto-tool-choice: true
+  tool-call-parser: hermes
+
+# bf16-веса 32B → карта ≥80 ГБ (лейбл gpu-vram Gt 79 → H200 141 ГБ)
+gpuMinVramGb: 80

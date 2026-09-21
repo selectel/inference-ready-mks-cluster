@@ -1,0 +1,52 @@
+# =============================================================================
+# Init-job: создание админ-пользователя OpenWebUI (декларативно, без ручного
+# входа в UI). Применяет terraform (kubernetes_manifest в 02-addons).
+#
+# Логика: первый созданный пользователь OpenWebUI получает права админа —
+# POST /api/v1/auths/signup. Email совпадает с dex-админом: при последующем
+# входе через OIDC OpenWebUI находит пользователя по email и логинит его
+# (права админа сохраняются).
+#
+# Креды — Secret sso-admin (email/password; единый пароль с dex, создаёт
+# terraform). Job ждёт готовности OpenWebUI (pod стартует после CNPG-кластера
+# openwebui-db) — цикл до 30 минут; restartPolicy OnFailure + backoffLimit.
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-openwebui-admin
+  namespace: openwebui
+spec:
+  backoffLimit: 12
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        nodegroup: system
+      containers:
+        - name: init
+          # Зеркало docker.io (pull-through) — образ не тянется с Docker Hub
+          image: docker-registry.selectel.ru/curlimages/curl:8.12.1
+          envFrom:
+            - secretRef:
+                name: sso-admin
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              i=0
+              while [ $i -lt 60 ]; do
+                code=$(curl -s -o /tmp/r.json -w '%{http_code}' -X POST \
+                  http://openwebui.openwebui.svc.cluster.local:80/api/v1/auths/signup \
+                  -H 'Content-Type: application/json' \
+                  -d "{\"name\":\"admin\",\"email\":\"$email\",\"password\":\"$password\"}" || echo 000)
+                if [ "$code" = "200" ]; then
+                  echo "OK: admin создан ($email)"; exit 0
+                fi
+                if grep -qi 'already exists' /tmp/r.json 2>/dev/null; then
+                  echo "OK: admin уже существует"; exit 0
+                fi
+                i=$((i+1)); echo "попытка $i: HTTP $code $(head -c 200 /tmp/r.json 2>/dev/null)"; sleep 30
+              done
+              echo "таймаут ожидания OpenWebUI"; exit 1

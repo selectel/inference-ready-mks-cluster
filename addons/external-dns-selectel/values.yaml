@@ -1,0 +1,35 @@
+# Версии пиннуты; поднимайте осознанным изменением (см. AGENTS.md).
+# external-dns v0.14.2 — связка, проверенная Selectel (webinar-llm-on-mks)
+# вместе с webhook; v0.22 падал на синхронизации EndpointSlice (не проверено почему).
+externalDns:
+  image: registry.k8s.io/external-dns/external-dns:v0.14.2
+  policy: upsert-only # sync = ещё и удалять записи, пропавшие из кластера
+  interval: 1m
+  sources: # источники: Service/Ingress-аннотации + Gateway API (webinar-паттерн)
+    - service
+    - ingress
+    - gateway-httproute
+    - gateway-tlsroute
+    - gateway-tcproute
+    - gateway-udproute
+
+webhook:
+  image: ghcr.io/selectel/external-dns-selectel-webhook:v0.2.0
+
+# Фильтр зоны: external-dns управляет записями только в этой зоне.
+domain: "" # например example.com (без точки)
+
+# Креды сервисного пользователя DNS (создаётся в infra/01-cluster/dns.tf).
+# password — sensitive, подаётся terraform'ом через set_sensitive.
+selectel:
+  username: ""
+  accountId: ""
+  projectId: ""
+  password: ""
+
+# Привязка к нодам. В этом blueprint: nodegroup: system (CPU-ноды).
+nodeSelector: {}
+
+resources:
+  externalDns: {}
+  webhook: {}

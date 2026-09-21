@@ -1,0 +1,42 @@
+# RBAC для DRA-поддержки Karpenter (kubectl apply, один раз).
+#
+# Karpenter (включая кастомную сборку Selectel) умеет DRA-aware провижининг
+# (upstream v1.14+), но:
+#   1. выключен по умолчанию — нужен env IGNORE_DRA_REQUESTS=false у деплоймента
+#      karpenter (kubectl -n kube-system set env deploy/karpenter
+#      IGNORE_DRA_REQUESTS=false);
+#   2. публичный чарт 0.3.1 не даёт SA прав на resource.k8s.io — этот ClusterRole
+#      закрывает дыру (проверено 2026-09-10 на сборке 48f2256: без него
+#      karpenter флапит "cannot list resourceslices/resourceclaims").
+#
+# ОГРАНИЧЕНИЕ (подтверждено по исходникам 2026-09-10, git.selectel.org/mks/
+# karpenter-provider-selectel v0.3.1 + stage): провайдер не заполняет
+# cloudprovider.InstanceType.DynamicResources (0 упоминаний в pkg/ форка) —
+# karpenter отвечает «no instance type can satisfy the allocation» и ноду под
+# DRA-под НЕ поднимает. Заполнить извне (NodePool/NodeClass/NodeOverlay)
+# нельзя — единственный путь — код провайдера. До закрытия используйте
+# триггер-под (node-trigger.yaml рядом).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: karpenter-dra
+rules:
+  - apiGroups: ["resource.k8s.io"]
+    resources: ["resourceclaims", "resourceslices", "deviceclasses", "resourceclaimtemplates"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["resource.k8s.io"]
+    resources: ["resourceclaims/status"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: karpenter-dra
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: karpenter-dra
+subjects:
+  - kind: ServiceAccount
+    name: karpenter
+    namespace: kube-system

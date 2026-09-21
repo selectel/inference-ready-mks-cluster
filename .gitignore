@@ -1,0 +1,10 @@
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+kubeconfig
+*.tfvars*
+!*.tfvars.example
+crash.log
+tfplan*
+infra/02-addons/rendered/

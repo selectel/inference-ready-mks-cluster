@@ -1,0 +1,139 @@
+# =============================================================================
+# AIBrix v0.7.0 — values для Selectel Managed Kubernetes (MKS)
+# =============================================================================
+# Использование (строго ПОВЕРХ официального stable.yaml, который пиннит
+# образы к релизу v0.7.0 — дефолтный values.yaml пиннит теги :nightly):
+#
+#   git clone https://github.com/vllm-project/aibrix.git
+#   cd aibrix && git checkout v0.7.0
+#   kubectl apply -f dist/chart/crds/
+#   helm install aibrix dist/chart \
+#     -f dist/chart/stable.yaml \
+#     -f helm/values-selectel-mks.yaml \
+#     -n aibrix-system --create-namespace
+#
+# Порядок -f важен: побеждает последний файл. Подробности: docs/02-install-mks.md
+# =============================================================================
+
+# --- Пиннинг на system-ноды (якорь — до первого использования) ----------------
+# YAML-якорь: один блок nodeAffinity на все компоненты ниже. GPU-ноды Karpenter
+# не тейнчат — без пиннинга поды могли бы уехать на дорогие GPU-ноды.
+# Новые CPU-нодгруппы без лейбла nodegroup=system автоматически исключаются.
+x-system-node-affinity: &systemNodeAffinity
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: nodegroup
+              operator: In
+              values: [system]
+
+# --- Дата-плейн Envoy (прокси) и экспозиция LLM-шлюза ------------------------
+gateway:
+  envoyProxy:
+    # Дата-плейн — Deployment 2 реплики на system-нодах (upstream-путь
+    # envoyDeployment + affinity; локальный патч envoyDaemonSet удалён —
+    # он был нужен только для пула внешнего LB AIBrix, а LB убран).
+    replicas: 2
+    affinity: *systemNodeAffinity
+
+    # Сервис дата-плейна — ClusterIP, БЕЗ балансировщика Octavia.
+    # Почему: (1) единственный публичный вход — LiteLLM (auth-слой), у envoy
+    # своей аутентификации нет — LB был бы обходом ключей; (2) LiteLLM ходит
+    # в envoy по стабильному имени aibrix-gateway.envoy-gateway-system
+    # (создаётся terraform'ом в 02-addons, селектор по owning-gateway-лейблам,
+    # а не по хэш-имени EG — передеплой AIBrix не ломает связность);
+    # (3) LB + его health-чеки — лишняя точка отказа: при добавлении новой
+    # CPU-нодгруппы без envoy пул деградировал бы (DEGRADED).
+    # Операторский доступ (отладка/метрики) — kubectl port-forward или
+    # сервис aibrix-gateway изнутри кластера.
+    service:
+      type: ClusterIP
+
+# --- Пиннинг контроль-плейна AIBrix --------------------------------------------
+controllerManager:
+  affinity: *systemNodeAffinity
+
+gatewayPlugin:
+  affinity: *systemNodeAffinity
+  replicaCount: 1
+  container:
+    envs:
+      # Для одной реплики неактуально. При replicaCount > 1 обязательно "true"
+      # (синхронизация состояния prefix-cache между репликами через Redis) —
+      # самая частая ошибка конфигурации HA-шлюза. См. docs/05-usage-scenarios.md
+      AIBRIX_STATESYNC_ENABLED: "false"
+
+gpuOptimizer:
+  affinity: *systemNodeAffinity
+
+metadata:
+  affinity: *systemNodeAffinity   # и redis метадаты (патч шаблона redis.yaml)
+  service:
+    affinity: *systemNodeAffinity # сам metadata-service читает .metadata.service.affinity
+
+# --- Ресурсы -------------------------------------------------------------------
+# Дефолтов чарта достаточно для тестового кластера: контроль-плейн AIBrix
+# полностью CPU-ный и укладывается примерно в ~2.5 vCPU / ~2.5 GiB суммарно
+# (controller-manager 10m/64Mi, gateway-plugin 1/1Gi, metadata 50m/128Mi,
+# gpu-optimizer 10m/64Mi, redis 100m/100Mi, envoy 1/1Gi).
+# Раскомментируйте для override:
+
+# controllerManager:
+#   replicas: 1
+#   container:
+#     resources:
+#       requests: { cpu: 100m, memory: 128Mi }
+#       limits:   { cpu: 500m, memory: 256Mi }
+
+# metadata:
+#   service:
+#     replicas: 1
+#   redis:
+#     enabled: true          # встроенный Redis (aibrix-redis-master, без персистента)
+
+# gpuOptimizer:
+#   replicaCount: 1
+
+# --- Мирринг образов (если egress на docker.io закрыт) ------------------------
+# Образы AIBrix живут на ghcr.io / docker.io; egress подтверждён официальными
+# инструкциями Selectel. При блокировках — pull-through-зеркало
+# docker-registry.selectel.ru (образы vLLM/утилит в манифестах репо уже
+# через него) или собственный registry, переопределением репозиториев:
+
+# controllerManager:
+#   container:
+#     image:
+#       repository: docker-registry.selectel.ru/<образ-в-зеркале>
+#       tag: v0.7.0
+# gatewayPlugin:
+#   container:
+#     image:
+#       repository: docker-registry.selectel.ru/<образ-в-зеркале>
+#       tag: v0.7.0
+# gpuOptimizer:
+#   container:
+#     image:
+#       repository: docker-registry.selectel.ru/<образ-в-зеркале>
+#       tag: v0.7.0
+# metadata:
+#   service:
+#     container:
+#       image:
+#         repository: docker-registry.selectel.ru/<образ-в-зеркале>
+#         tag: v0.7.0
+
+# --- Мониторинг ---------------------------------------------------------------
+# ServiceMonitor контроллера (controller_runtime_*/workqueue_*: дашборд
+# AIBrix Control Plane Runtime, grafana.com не требуется). Метрики за
+# kube-rbac-proxy: Prometheus аутентифицируется своим SA-токеном (TokenReview,
+# дефолтный ClusterRole kube-prometheus-stack разрешает /metrics).
+# Требует установленный observability-стек (CRD ServiceMonitor + Prometheus).
+prometheus:
+  enable: true
+#
+# Трейсинг Envoy во внешний OTLP-endpoint:
+# openTelemetry:
+#   enable: true
+#   host: otel-collector.observability.svc.cluster.local
+#   port: 4317

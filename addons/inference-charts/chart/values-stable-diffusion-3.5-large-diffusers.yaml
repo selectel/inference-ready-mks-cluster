@@ -1,0 +1,17 @@
+model: stabilityai/stable-diffusion-3.5-large
+
+modelParameters:
+  pipeline: stablediffusion3
+
+inference:
+  serviceName: sd3-diffusers
+  serviceNamespace: default
+  accelerator: gpu
+  framework: diffusers
+
+  modelServer:
+    image:
+      repository: diffusers/diffusers-pytorch-cuda
+      tag: latest
+    deployment:
+      # Selectel: выбор карты — gpuNames/gpuMinVramGb (instanceType апстрима)

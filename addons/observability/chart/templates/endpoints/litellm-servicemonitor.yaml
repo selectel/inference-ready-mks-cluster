@@ -1,0 +1,32 @@
+{{- if and .Values.endpoints.enabled .Values.endpoints.litellm.enabled }}
+# Метрики LiteLLM Proxy (/metrics на основном порту 4000; включаются
+# litellm_settings.callbacks=["prometheus"] в values чарта litellm).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: litellm
+  namespace: {{ .Values.endpoints.litellm.namespace }}
+  labels:
+    app.kubernetes.io/part-of: ai-ml-observability
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.endpoints.litellm.namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: litellm
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+{{- with .Values.endpoints.litellm.authSecret }}
+      # /metrics litellm закрыт master-key (Bearer); секрет лежит в ns
+      # Prometheus (копию создаёт terraform: litellm-masterkey в monitoring)
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ .name }}
+          key: {{ .key }}
+{{- end }}
+{{- end }}

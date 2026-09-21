@@ -1,0 +1,19 @@
+# SelectelNodeClass: параметры сетевого загрузочного диска нод, создаваемых Karpenter.
+# Документация: https://github.com/selectel/karpenter-provider-selectel-docs
+apiVersion: karpenter.k8s.selectel/v1alpha1
+kind: SelectelNodeClass
+metadata:
+  name: default
+spec:
+  # Явно передаем при создании нодгруппы, что установка NvidiaDevicePlugin не нужна. Также не будут устанавливаться драйвера на нодах, нужно их устанавливать GPU оператором.
+  installNvidiaDevicePlugin: false
+  disk:
+    # Типы сетевого диска: basic, basicssd, universal, universal2, fast.
+    # Провайдер использует только первый элемент списка (categories[0]), поэтому
+    # тип не может выбираться по зоне автоматически. universal2 выбран потому,
+    # что он есть во всех GPU-зонах этого blueprint'а (ru-6a, ru-7a, ru-7b, ru-9a),
+    # а universal отсутствует в ru-6. Таблица доступности — в README.md рядом.
+    categories:
+      - universal2
+    # Для vLLM-нод: образы (до ~10 ГБ) + кэш — 100 ГБ с запасом.
+    sizeGiB: 100

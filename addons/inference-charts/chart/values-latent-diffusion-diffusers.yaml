@@ -1,0 +1,17 @@
+model: CompVis/ldm-text2im-large-256
+
+modelParameters:
+  pipeline: diffusion
+
+inference:
+  serviceName: latent-diffusion-diffusers
+  serviceNamespace: default
+  accelerator: gpu
+  framework: diffusers
+
+  modelServer:
+    image:
+      repository: diffusers/diffusers-pytorch-cuda
+      tag: latest
+    deployment:
+      # Selectel: выбор карты — gpuNames/gpuMinVramGb (instanceType апстрима)

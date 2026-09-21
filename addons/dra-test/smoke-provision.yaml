@@ -1,0 +1,18 @@
+# Тест 2: поднимет ли Karpenter ноду под DRA-под (без пина на ноду).
+# Успех = полный цикл DRA на MKS; Pending = Karpenter не умеет ResourceClaims.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dra-smoke-provision
+spec:
+  restartPolicy: Never
+  resourceClaims:
+    - name: gpu
+      resourceClaimTemplateName: dra-gpu
+  containers:
+    - name: nvidia-smi
+      image: nvidia/cuda:12.4.1-base-ubuntu22.04
+      command: ["nvidia-smi"]
+      resources:
+        claims:
+          - name: gpu

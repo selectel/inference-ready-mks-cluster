@@ -1,0 +1,28 @@
+{{- if eq .Values.inference.framework "triton-vllm" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: triton-model-repository
+  namespace: {{.Values.inference.serviceNamespace}}
+data:
+  config.pbtxt: |
+    backend: "vllm"
+
+    instance_group [
+      {
+        kind: KIND_MODEL
+        count: 1
+      }
+    ]
+  model.json: |
+    {{- $params := .Values.modelParameters | deepCopy }}
+    {{- $params = set $params "model" .Values.model }}
+    {{- $newParams := dict }}
+    {{- range $key, $value := $params }}
+      {{- $snakeKey := $key | snakecase }}
+      {{- $newParams = set $newParams $snakeKey $value }}
+    {{- end }}
+    {
+      {{- $newParams | toJson | trimPrefix "{" | trimSuffix "}" }}
+    }
+{{- end }}

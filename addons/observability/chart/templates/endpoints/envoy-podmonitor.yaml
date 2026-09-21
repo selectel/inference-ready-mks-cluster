@@ -1,0 +1,24 @@
+{{- if and .Values.endpoints.enabled .Values.endpoints.envoy.enabled }}
+# Метрики Envoy data-plane aibrix (:19001/stats/prometheus): трафик шлюза,
+# апстримы, латентность (дашборд AIBrix Envoy Gateway).
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: envoy-aibrix-dataplane
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: ai-ml-observability
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.endpoints.envoy.namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: envoy
+      gateway.envoyproxy.io/owning-gateway-namespace: aibrix-system
+  podMetricsEndpoints:
+    - port: metrics
+      path: /stats/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+{{- end }}

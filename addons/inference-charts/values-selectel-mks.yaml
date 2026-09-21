@@ -1,0 +1,79 @@
+# =============================================================================
+# Базовый пресет Selectel для inference-charts (вендореный чарт).
+# Накладывается ПЕРВЫМ, поверх — values конкретной модели (см. пример
+# values-qwen3-32b-s3.yaml). Устанавливается вручную helm'ом (opt-in),
+# terraform этот чарт НЕ ставит:
+#
+#   helm template test addons/inference-charts/chart \
+#     -f addons/inference-charts/values-selectel-mks.yaml \
+#     -f addons/inference-charts/values-qwen3-32b-s3.yaml
+#
+# Требования кластера (проверяются только при деплое, не при рендере):
+#   - PVC models (SC csi-s3, весь S3-контейнер с весами) — infra/02-addons
+#     (install_csi_s3) + загрузка весов Job'ом из addons/models/;
+#   - GPU-пул Karpenter с лейблом gpu: <имя> — addons/karpenter/.
+# =============================================================================
+
+# Зеркало registry Selectel (egress к docker.io может быть закрыт)
+global:
+  image:
+    pullPolicy: IfNotPresent
+
+inference:
+  accelerator: gpu
+  # aibrix: лейбл model.aibrix.ai/name на Deployment/подах/Service — по нему
+  # aibrix-шлюз маршрутизирует запросы, а контроллер ModelAdapter находит
+  # поды (podSelector). vllm — если модель нужна напрямую (без шлюза)
+  framework: aibrix
+  serviceName: inference    # переопределяется values'ом модели
+  serviceNamespace: default
+  modelServer:
+    image:
+      # Пин версии vLLM — общий с манифестами addons/models/
+      repository: docker-registry.selectel.ru/vllm/vllm-openai
+      tag: v0.11.0
+    deployment:
+      replicas: 1
+      # Холодный S3 (geesefs): веса читаются с FUSE при старте —
+      # 180×10с = 30 мин запаса на первый запуск
+      startupProbe:
+        httpGet:
+          path: /health
+          port: 8000
+        failureThreshold: 180
+        periodSeconds: 10
+      # Топология-спред/под-affinity EKS-специфики не нужны
+      topologySpreadConstraints:
+        enabled: false
+      podAffinity:
+        enabled: false
+
+# Одиночная GPU: RollingUpdate зависает на апдейте (новый под Pending,
+# GPU занят старым) — как в манифестах addons/models/
+strategy:
+  type: Recreate
+
+# Веса — из S3 (PVC models, SC csi-s3): HF-токен не нужен
+hfTokenSecret:
+  enabled: false
+
+# Монтирование S3-контейнера с весами (см. addons/models/README.md)
+extraVolumes:
+  - name: models
+    persistentVolumeClaim:
+      claimName: models
+      readOnly: true
+extraVolumeMounts:
+  - name: models
+    mountPath: /models
+    readOnly: true
+
+# Порт сервиса — под ServiceMonitor observability (эндпоинт metrics)
+service:
+  type: ClusterIP
+  port: 8000
+  portName: metrics
+
+# Метка для ServiceMonitor vllm (addons/observability)
+extraLabels:
+  observability.ai/vllm: "true"

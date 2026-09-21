@@ -1,0 +1,28 @@
+{{- if and .Values.endpoints.enabled .Values.endpoints.ray.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ray-head
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: ai-ml-observability
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      ray.io/node-type: head
+  endpoints:
+    - port: metrics
+      interval: 15s
+    - port: as-metrics
+      interval: 15s
+    - port: dash-metrics
+      interval: 15s
+    - port: serve
+      path: /metrics
+      interval: 15s
+  targetLabels:
+    - ray.io/cluster
+{{- end }}
+

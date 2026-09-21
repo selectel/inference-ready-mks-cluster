@@ -1,0 +1,43 @@
+# =============================================================================
+# Модель: NousResearch/Meta-Llama-3-8B-Instruct из S3.
+# Веса — из S3-контейнера (PVC models, SC csi-s3): алиас Meta-Llama-3-8B-Instruct
+# в hf_models (blueprint.tfvars) → Job hf-models-upload (terraform, 02-addons),
+# либо Job'ом s3ModelCopy (values-s3-copy-llama3-8b.yaml).
+#
+# Адаптирован из ветки backup-before-rebase (values-llama-3-8b-instruct-from-s3):
+# старый вариант использовал s3://modelPath + RUNAI-стример и env с кредами S3 —
+# эта ветка кода из чарта удалена; веса подмонтированы как PVC (см.
+# values-selectel-mks.yaml, extraVolumes/extraVolumeMounts).
+#
+# GPU: bf16-веса 8B (~16 ГБ) — любая карта 24+ ГБ.
+# =============================================================================
+model: NousResearch/Meta-Llama-3-8B-Instruct
+modelPath: /models/Meta-Llama-3-8B-Instruct
+
+inference:
+  serviceName: llama-3-8b-instruct
+  modelServer:
+    deployment:
+      replicas: 1
+      minReplicas: 1
+      maxReplicas: 2
+      resources:
+        gpu:
+          requests:
+            nvidia.com/gpu: 1
+          limits:
+            nvidia.com/gpu: 1
+
+modelParameters:
+  gpuMemoryUtilization: 0.8
+  maxModelLen: 8192
+  maxNumSeqs: 4
+  maxNumBatchedTokens: 8192
+  maxParallelLoadingWorkers: 2
+  pipelineParallelSize: 1
+  tensorParallelSize: 1
+  enablePrefixCaching: true
+  enforceEager: true
+
+# Любой 24-ГБ GPU (ru-6: L4/A5000/RTX 4090)
+gpuNames: [l4, a5000, rtx4090-24]

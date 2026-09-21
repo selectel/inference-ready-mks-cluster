@@ -1,0 +1,46 @@
+# =============================================================================
+# Quickstart: LoRA-адаптер через AIBrix ModelAdapter (проверено 2026-09-13).
+# Дополняет базовый деплой vllm-quickstart.yaml (там же --enable-lora и env
+# VLLM_ALLOW_RUNTIME_LORA_UPDATING — предусловия этого CR).
+#
+# Как работает (v0.7.0): БЕЗ сайдкара aibrix-runtime контроллер использует
+# direct-режим — сам вызывает POST /v1/load_lora_adapter у vLLM с
+# lora_path = artifactURL. Адаптер уже в томе (скачан job'ой hf-models-upload
+# по записи hf_models в blueprint) — ничего не скачивается в рантайме.
+# После загрузки контроллер создаёт Service/EndpointSlice с именем адаптера —
+# aibrix-шлюз маршрутизирует запросы по model = имени CR.
+# Удаление CR = выгрузка адаптера из vLLM (под не рестартует).
+#
+# ⚠ Сайдкар-режим (aibrix-runtime, artifactURL: huggingface://...) в v0.7.0
+# имеет баг: при ретрае контроллера (каждые ~30 с) сайдкар возвращает корень
+# каталога вместо snapshots/<rev> («No adapter found»), плюс выкачивает весь
+# репозиторий с GGUF-конверсиями. Пример сайдкар-режима — в
+# addons/aibrix/manifests/lora-adapter.yaml (не проверен).
+#
+# Жизненный цикл: Pending -> Loading -> Bound -> Running.
+# =============================================================================
+apiVersion: model.aibrix.ai/v1alpha1
+kind: ModelAdapter
+metadata:
+  name: deepseek-finqa          # станет model= в запросах клиентов
+  namespace: default
+  labels:
+    model.aibrix.ai/name: "deepseek-finqa"
+    model.aibrix.ai/port: "8000"
+spec:
+  # База (deployment из vllm-quickstart.yaml; = model.aibrix.ai/name)
+  baseModel: deepseek-r1-distill-llama-8b
+
+  # Поды, способные хостить адаптер
+  podSelector:
+    matchLabels:
+      model.aibrix.ai/name: deepseek-r1-distill-llama-8b
+
+  # Адаптер из S3-тома (алиас из hf_models; layout — файлы в корне каталога,
+  # именно так их кладёт job). Возможны также huggingface://, s3://, gs://
+  # (последние два — только в сайдкар-режиме, см. предупреждение выше).
+  artifactURL: /models/deepseek-lora
+
+  # replicas: опущено = грузить на ВСЕ подходящие поды; 1 = на один.
+  # default | least-adapters (распределять адаптеры по подам равномерно)
+  schedulerName: default

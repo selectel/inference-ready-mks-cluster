@@ -1,0 +1,54 @@
+# =============================================================================
+# Модель: deepseek-ai/DeepSeek-R1-Distill-Llama-8B из S3
+# (замена addons/models/vllm-quickstart.yaml — smoke/production-минимальная).
+# Веса — из S3-контейнера (PVC models): алиас deepseek-r1-distill-llama-8b
+# в hf_models (blueprint.tfvars) → Job hf-models-upload (terraform, 02-addons).
+#
+# GPU: любая карта 24+ ГБ. Список (не одно имя) — fallback: если самого
+# дешёвого GPU нет в зоне, Karpenter берёт следующий по цене из списка.
+# LoRA: статический адаптер из того же S3 (deepseek-lora в hf_models) +
+# env для динамической загрузки через aibrix ModelAdapter (direct-режим,
+# см. addons/models/modeladapter-finqa.yaml).
+# =============================================================================
+model: deepseek-r1-distill-llama-8b
+modelPath: /models/deepseek-r1-distill-llama-8b
+
+inference:
+  serviceName: deepseek-r1-distill-llama-8b
+  modelServer:
+    deployment:
+      replicas: 1
+      resources:
+        gpu:
+          # nvidia.com/gpu — classic-запрос: Karpenter провижинит ноды нативно;
+          # при установленном DRA-драйвере (addons/dra-test) мостик
+          # extended-resources сам создаёт ResourceClaim (DRA-учёт карты)
+          requests:
+            cpu: 2
+            memory: 8Gi
+            nvidia.com/gpu: 1
+          limits:
+            nvidia.com/gpu: 1
+    env:
+      # Разрешает runtime-загрузку LoRA (API /v1/load_lora_adapter, vLLM v0.11)
+      # — нужно для aibrix ModelAdapter (direct-режим)
+      VLLM_ALLOW_RUNTIME_LORA_UPDATING: "True"
+
+modelParameters:
+  host: 0.0.0.0
+  port: "8000"
+  max-model-len: "12288"
+  # Tool calling: дистиллят на базе Llama-3.1 — llama3_json
+  # (Qwen-дистилляты — hermes)
+  enable-auto-tool-choice: true
+  tool-call-parser: llama3_json
+  # Статический LoRA-адаптер из тома (алиас hf_models). Динамическая
+  # загрузка — aibrix ModelAdapter (addons/models/modeladapter-finqa.yaml)
+  enable-lora: true
+  max-lora-rank: "16"
+  max-loras: "2"
+  lora-modules: deepseek-r1-distill-llama-8b-lora=/models/deepseek-lora
+
+# Любой 24-ГБ GPU (ru-6: L4/A5000/RTX 4090) — список, не одно имя:
+# Karpenter берёт самый дешёвый из доступных в зоне
+gpuNames: [l4, a5000, rtx4090-24]

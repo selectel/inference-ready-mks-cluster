@@ -1,0 +1,16 @@
+{{- if .Values.dashboards.enabled }}
+{{- range $name := list "litellm" "dcgm-exporter" "cnpg" "n8n" "aibrix-control-plane" "aibrix-envoy-gateway" "aibrix-vllm-engine" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-dashboard
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: ai-ml-observability
+data:
+  {{ $name }}-dashboard.json: |-
+{{ $.Files.Get (printf "files/dashboards/%s-dashboard.json" $name) | indent 4 }}
+---
+{{- end }}
+{{- end }}

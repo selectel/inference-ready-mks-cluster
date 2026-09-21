@@ -1,0 +1,40 @@
+# =============================================================================
+# DeepSeek-R1-Distill-Llama-8B на Ray (framework: ray-vllm): RayCluster вместо
+# Deployment. Веса — из HuggingFace при старте (нужен HF-токен). Облегчённый
+# вариант values-deepseek-r1-distill-llama-8b-s3 (там vLLM + aibrix + S3-PVC) —
+# для мульти-нод/масштабирования через Ray.
+#
+# Образ — зеркало registry Selectel (rayproject/ray); к тегу шаблон добавляет
+# суффикс -gpu (accelerator: gpu). Не проверено на кластере.
+# =============================================================================
+model: deepseek-ai/DeepSeek-R1-Distill-Llama-8B
+
+modelParameters:
+  gpuMemoryUtilization: 0.9
+  maxModelLen: 8192
+  maxNumBatchedTokens: 16384
+
+inference:
+  serviceName: deepseekr1-dis-llama-8b-ray-vllm
+  serviceNamespace: default
+  accelerator: gpu
+  framework: ray-vllm
+
+  rayOptions:
+    rayVersion: 2.47.0
+  modelServer:
+    vllmVersion: 0.9.1
+    image:
+      repository: docker-registry.selectel.ru/rayproject/ray
+      tag: 2.47.0-py311
+    deployment:
+      resources:
+        gpu:
+          limits:
+            cpu: 12
+            memory: "60G"
+            nvidia.com/gpu: 1
+          requests:
+            cpu: 12
+            memory: "60G"
+            nvidia.com/gpu: 1

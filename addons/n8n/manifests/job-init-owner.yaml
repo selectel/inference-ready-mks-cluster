@@ -1,0 +1,51 @@
+# =============================================================================
+# Init-job: инициализация владельца n8n (декларативно, без ручного входа в UI).
+# Применяет terraform (kubernetes_manifest в 02-addons).
+#
+# Логика: POST /rest/owner/setup создаёт owner-аккаунт (единственный вход
+# в community-версии без SSO — OIDC у n8n Enterprise-only, см.
+# addons/dex/README.md). Email/пароль совпадают с dex-админом (Secret
+# sso-admin) — единый набор кредов на все панели.
+#
+# Job ждёт готовности n8n (pod стартует после CNPG-кластера n8n-db) —
+# цикл до 30 минут; restartPolicy OnFailure + backoffLimit.
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-n8n-owner
+  namespace: n8n
+spec:
+  backoffLimit: 12
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        nodegroup: system
+      containers:
+        - name: init
+          # Зеркало docker.io (pull-through) — образ не тянется с Docker Hub
+          image: docker-registry.selectel.ru/curlimages/curl:8.12.1
+          envFrom:
+            - secretRef:
+                name: sso-admin
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              i=0
+              while [ $i -lt 60 ]; do
+                code=$(curl -s -o /tmp/r.json -w '%{http_code}' -X POST \
+                  http://n8n.n8n.svc.cluster.local:5678/rest/owner/setup \
+                  -H 'Content-Type: application/json' \
+                  -d "{\"email\":\"$email\",\"firstName\":\"Admin\",\"lastName\":\"SSO\",\"password\":\"$password\"}" || echo 000)
+                if [ "$code" = "200" ]; then
+                  echo "OK: owner создан ($email)"; exit 0
+                fi
+                if grep -qi 'already\|exist' /tmp/r.json 2>/dev/null; then
+                  echo "OK: owner уже инициализирован"; exit 0
+                fi
+                i=$((i+1)); echo "попытка $i: HTTP $code $(head -c 200 /tmp/r.json 2>/dev/null)"; sleep 30
+              done
+              echo "таймаут ожидания n8n"; exit 1

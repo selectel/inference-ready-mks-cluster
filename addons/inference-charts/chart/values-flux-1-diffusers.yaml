@@ -1,0 +1,17 @@
+model: black-forest-labs/FLUX.1-schnell
+
+modelParameters:
+  pipeline: flux
+
+inference:
+  serviceName: flux-diffusers
+  serviceNamespace: default
+  accelerator: gpu
+  framework: diffusers
+
+  modelServer:
+    image:
+      repository: diffusers/diffusers-pytorch-cuda
+      tag: latest
+    deployment:
+      # Selectel: выбор карты — gpuNames/gpuMinVramGb (instanceType апстрима)

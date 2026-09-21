@@ -1,0 +1,70 @@
+# DRA: ResourceClaimTemplate — примеры запросов GPU.
+# Применяются kubectl'ом (namespace-объекты; resource.k8s.io — встроенный API).
+#
+# Ключевые правила CEL (k8s 1.36, драйвер gpu.nvidia.com):
+#   - атрибуты/capacity доступны по домену драйвера:
+#     device.attributes['gpu.nvidia.com'].productName
+#     device.capacity['gpu.nvidia.com'].memory
+#   - значения атрибутов разворачиваются в голые типы (.string НЕ нужен);
+#   - Quantity не имеет операторов сравнения — только методы:
+#     .compareTo(quantity('24Gi')) >= 0 / .isGreaterThan(quantity('24Gi'));
+#   - в capacity.requests ключ — просто `memory` (как в срезе драйвера).
+#
+# Примеры атрибутов среза: productName ('NVIDIA GeForce RTX 4090'),
+# architecture, brand, cudaComputeCapability, driverVersion, uuid.
+# ВНИМАНИЕ: у 24-ГБ карт capacity = 24564Mi < 24Gi — порог «24 ГБ» в селекторах
+# писать как 20Gi, иначе RTX 4090 не сматчится.
+---
+# 1. Целая карта (без селекторов — любое GPU-устройство).
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: dra-gpu-whole
+  namespace: default
+spec:
+  spec:
+    devices:
+      requests:
+        - name: gpu
+          exactly:
+            deviceClassName: gpu.nvidia.com
+            count: 1
+---
+# 2. Кусок памяти карты (шаринг): 20Gi VRAM.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: dra-gpu-mem-20gi
+  namespace: default
+spec:
+  spec:
+    devices:
+      requests:
+        - name: gpu
+          exactly:
+            deviceClassName: gpu.nvidia.com
+            count: 1
+            capacity:
+              requests:
+                memory: 20Gi
+---
+# 3. Выбор по модели GPU + памяти (если нужна конкретика):
+#    RTX 4090 и не меньше 20Gi свободной VRAM.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: dra-gpu-rtx4090
+  namespace: default
+spec:
+  spec:
+    devices:
+      requests:
+        - name: gpu
+          exactly:
+            deviceClassName: gpu.nvidia.com
+            count: 1
+            selectors:
+              - cel:
+                  expression: "device.attributes['gpu.nvidia.com'].productName == 'NVIDIA GeForce RTX 4090'"
+              - cel:
+                  expression: "device.capacity['gpu.nvidia.com'].memory.compareTo(quantity('20Gi')) >= 0"

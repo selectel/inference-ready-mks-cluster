@@ -1,0 +1,14 @@
+# Шаблон ResourceClaim: 1× GPU через DRA (тестовая инфраструктура addons/dra-test).
+# DeviceClass gpu.nvidia.com создаёт драйвер NVIDIA DRA (шаг 2 README).
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: dra-gpu
+spec:
+  spec:
+    devices:
+      requests:
+        - name: gpu
+          exactly:
+            deviceClassName: gpu.nvidia.com
+            count: 1

@@ -1,0 +1,53 @@
+# Values valkey для Selectel MKS (чарт bitnami/valkey 6.2.19).
+# Применяется terraform-корнём infra/02-addons (тумблер install_valkey).
+
+# Пин образа: у docker.io/bitnami/valkey versioned-теги удалены (Broadcom),
+# живые теги — в bitnamilegacy (инвариант №5 AGENTS.md; тот же репозиторий,
+# что использует вендореный чарт litellm для redis-subchart'а).
+# 8.1.3 — максимальный versioned-тег bitnamilegacy; чарт 6.2.19 заявляет
+# appVersion 9.1.2, но конфигурация (AOF, пароль через env) идентична —
+# проверено на 8.1.3, не проверено на 9.x.
+image:
+  # Через зеркало Selectel: registry-1.docker.io из сети кластера недоступен
+  # (i/o timeout при pull) — прямой путь работает только из внешних сетей.
+  # registry отдельным полем (иначе чарт клеит префикс registry-1.docker.io),
+  # allowInsecureImages — потому что зеркало не входит в реестры bitnami-чарта
+  # (github.com/bitnami/charts/issues/30850).
+  registry: docker-registry.selectel.ru
+  repository: bitnamilegacy/valkey
+  tag: 8.1.3
+
+global:
+  security:
+    allowInsecureImages: true
+
+# Пароль — из существующего секрета valkey-auth (key valkey-password),
+# создаёт terraform (random_password). В values пароля нет.
+auth:
+  enabled: true
+  existingSecret: valkey-auth
+  existingSecretPasswordKey: valkey-password
+
+architecture: standalone
+
+primary:
+  # Кэш/очередь прикладных сервисов — на system-нодах
+  # (чарт 6.2.19 использует ключ primary.* — master.* игнорируется)
+  nodeSelector:
+    nodegroup: system
+  persistence:
+    enabled: true
+    # storageClass задаёт terraform (переменная storage_class_name)
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+# Мониторинг/сентинел не нужны (один инстанс, кэш)
+metrics:
+  enabled: false
+sentinel:
+  enabled: false

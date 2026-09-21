@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "external-dns-selectel.fullname" . }}
+  labels:
+    app.kubernetes.io/name: external-dns-selectel
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # единственная реплика владеет записями
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: external-dns-selectel
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: external-dns-selectel
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      serviceAccountName: {{ include "external-dns-selectel.fullname" . }}
+      securityContext:
+        fsGroup: 65534
+      containers:
+        - name: external-dns
+          image: {{ .Values.externalDns.image }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534
+          args:
+            - --log-level=info
+            - --log-format=text
+            - --interval={{ .Values.externalDns.interval }}
+            {{- range .Values.externalDns.sources }}
+            - --source={{ . }}
+            {{- end }}
+            - --policy={{ .Values.externalDns.policy }}
+            - --provider=webhook
+            # URL вебхука — дефолт http://localhost:8888 (sidecar ниже)
+            {{- if .Values.domain }}
+            - --domain-filter={{ .Values.domain }}
+            {{- end }}
+          ports:
+            - name: http
+              protocol: TCP
+              containerPort: 7979
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources.externalDns | nindent 12 }}
+        # Selectel DNS-webhook как sidecar — external-dns ходит в него по localhost.
+        - name: webhook
+          image: {{ .Values.webhook.image }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534
+          args:
+            - --project-id={{ .Values.selectel.projectId }}
+            - --account-id={{ .Values.selectel.accountId }}
+            - --username={{ .Values.selectel.username }}
+          ports:
+            - name: http
+              protocol: TCP
+              containerPort: 8888
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          env:
+            - name: PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "external-dns-selectel.fullname" . }}
+                  key: password
+          resources:
+            {{- toYaml .Values.resources.webhook | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

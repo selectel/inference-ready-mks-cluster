@@ -1,0 +1,26 @@
+{{- if and .Values.endpoints.enabled .Values.endpoints.vllm.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vllm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: ai-ml-observability
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+{{ toYaml .Values.endpoints.vllm.selectorLabels | indent 6 }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+      relabelings:
+        - action: replace
+          sourceLabels:
+            - __meta_kubernetes_namespace
+          targetLabel: workload_namespace
+{{- end }}
+

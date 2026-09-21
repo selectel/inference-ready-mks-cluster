@@ -1,0 +1,38 @@
+# Триггер-под: держит/поднимает GPU-ноду для DRA-подов.
+#
+# Karpenter не провижинит ноды под DRA-поды. Причина подтверждена по исходникам
+# (git.selectel.org/mks/karpenter-provider-selectel v0.3.1 + stage, ядро
+# sigs.k8s.io/karpenter v1.14.0): провайдер строит InstanceType в
+# pkg/providers/instancetype/types.go (Name/Requirements/Offerings/Capacity/
+# Overhead) и НЕ заполняет поле cloudprovider.InstanceType.DynamicResources —
+# в исходниках форка 0 упоминаний. Симуляция DRA-аллокации берёт шаблоны
+# устройств ТОЛЬКО оттуда (upstream pkg/controllers/provisioning/scheduling/
+# dra.go:118-123) → ни один тип инстанса не подходит → «no instance type can
+# satisfy the allocation» (pkg/scheduling/dynamicresources/allocator.go:674).
+# Заполнить это через NodePool/NodeClass/NodeOverlay НЕЛЬЗЯ — у этих API нет
+# DRA-полей (NodeOverlay умеет только price/capacity-extended-resources/
+# weight). Единственный путь — код провайдера (DynamicResources per flavor).
+# Обход до того: обычный под (без resourceClaims) провижинится штатно —
+# он и есть «паровоз»: садится на GPU-ноду из нужного пула, GPU НЕ занимает,
+# а DRA-поды аллоцируются следом.
+#
+# Подбирает ноду по лейблу пула (gpu: rtx4090-24 — единственная «привязка
+# к имени», она про ПУЛ, а не про устройство). Без этого пода пустую GPU-ноду
+# Karpenter консолидирует (WhenEmptyOrUnderutilized, 5 мин), и вернуть её
+# сможет только снова этот триггер.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: node-trigger
+spec:
+  restartPolicy: Always
+  nodeSelector:
+    gpu: rtx4090-24
+  containers:
+    - name: sleep
+      image: docker-registry.selectel.ru/library/busybox:latest
+      command: ["sleep", "infinity"]
+      resources:
+        requests:
+          cpu: 100m
+          memory: 64Mi

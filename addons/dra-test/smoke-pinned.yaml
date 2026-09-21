@@ -1,0 +1,20 @@
+# Тест 1: kubelet DRA + драйвер на существующей GPU-ноде (без Karpenter).
+# Перед запуском освободите GPU: kubectl scale deploy deepseek-r1-distill-llama-8b --replicas=0
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dra-smoke-pinned
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    nvidia.com/gpu: "true"   # лейбл GPU-нод MKS (nvidia.com/gpu.present нет)
+  resourceClaims:
+    - name: gpu
+      resourceClaimTemplateName: dra-gpu
+  containers:
+    - name: nvidia-smi
+      image: nvidia/cuda:12.4.1-base-ubuntu22.04
+      command: ["nvidia-smi"]
+      resources:
+        claims:
+          - name: gpu

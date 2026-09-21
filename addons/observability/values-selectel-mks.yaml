@@ -1,0 +1,111 @@
+# Values observability для Selectel MKS.
+# Чарт: addons/observability/chart (umbrella: kube-prometheus-stack,
+# opensearch-operator + OpenSearchCluster, fluent-operator, dcgm-exporter).
+# Ставит terraform (инвариант: install_observability в blueprint.tfvars).
+# Пароли (OpenSearch, Grafana) и зона DNS передаются terraform'ом через
+# второй values-файл (yamlencode в main.tf 02-корня).
+#
+# Структура overlay: только отличия от дефолтов чарта (addons/observability/
+# chart/values.yaml). StorageClass передаётся set'ом из переменной
+# storage_class_name (4 места: prometheus, alertmanager, grafana, opensearch).
+
+# DCGM-экспортер НЕ ставим: на GPU-нодах его уже ставит GPU Operator
+# (daemonset nvidia-dcgm-exporter, инвариант №6) — метрики собирает
+# ServiceMonitor endpoints.dcgm.
+dcgm:
+  enabled: false
+
+# Ray в blueprint нет — мониторы ray из чарта не нужны. DCGM тоже не нужен:
+# ServiceMonitor nvidia-dcgm-exporter создаёт сам чарт GPU Operator (ns
+# gpu-operator), наш Prometheus подбирает его (selectorNilUsesHelmValues=false).
+endpoints:
+  ray:
+    enabled: false
+  dcgm:
+    enabled: false
+
+# Компоненты стека — на выделенных CPU-нодах Karpenter (NodePool monitoring,
+# addons/karpenter/ru-<регион>/nodepool-monitoring.yaml: taint
+# dedicated=monitoring, label workload=monitoring).
+# ИСКЛЮЧЕНИЯ (остаются на всех нодах): node-exporter (DS) и fluent-bit (DS).
+_anchors:
+  ns: &ns
+    nodeSelector:
+      workload: monitoring
+  # якорь = сам список (иначе tolerations получит dict с ключом 'tolerations')
+  tol: &tol
+    - key: dedicated
+      operator: Equal
+      value: monitoring
+      effect: NoSchedule
+
+opensearch:
+  <<: *ns
+  tolerations: *tol
+  dashboards:
+    <<: *ns
+    tolerations: *tol
+
+opensearch-operator:
+  <<: *ns
+  tolerations: *tol
+
+fluent-operator:
+  operator:
+    <<: *ns
+    tolerations: *tol
+
+kube-prometheus-stack:
+  prometheusOperator:
+    <<: *ns
+    tolerations: *tol
+  prometheus:
+    prometheusSpec:
+      # Подбирать ВСЕ ServiceMonitor/PodMonitor/Rules во всех namespace
+      # (litellm, n8n, aibrix-system, CNPG-поды и т.д.) + ноды мониторинга.
+      <<: *ns
+      tolerations: *tol
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+  alertmanager:
+    alertmanagerSpec:
+      <<: *ns
+      tolerations: *tol
+  grafana:
+    <<: *ns
+    tolerations: *tol
+    # Вход: HTTPRoute grafana.<домен> на edge-шлюз (см. manifests/);
+    # OIDC — dex (addons/dex), клиент grafana.
+    # client_secret — через env GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET из Secret
+    # grafana-oauth (создаёт terraform): grafana-чарт запрещает секреты в
+    # values (assertNoLeakedSecrets), env имеет приоритет над grafana.ini.
+    envValueFrom:
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:
+        secretKeyRef:
+          name: grafana-oauth
+          key: client-secret
+      # Пароль n8n-db для SQL-дашборда (датасорс n8n-postgres)
+      N8N_DB_PASSWORD:
+        secretKeyRef:
+          name: n8n-db-readonly
+          key: password
+    grafana.ini:
+      server:
+        root_url: https://grafana.placeholder/   # заменяется (dns_zone_name)
+      auth.generic_oauth:
+        enabled: true
+        name: Dex SSO
+        client_id: grafana
+        scopes: openid profile email
+        auth_url: https://dex.placeholder/auth   # заменяется (auth_hostname)
+        token_url: https://dex.placeholder/token
+        api_url: https://dex.placeholder/userinfo
+        allow_sign_up: true
+        auto_assign_org_role: Viewer
+    # Открыт наружу через edge-шлюз (HTTPRoute), LoadBalancer не нужен.
+    service:
+      type: ClusterIP
+  kube-state-metrics:
+    <<: *ns
+    tolerations: *tol

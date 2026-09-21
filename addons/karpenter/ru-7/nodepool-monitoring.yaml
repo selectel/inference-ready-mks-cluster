@@ -1,0 +1,58 @@
+# NodePool: мониторинг (Prometheus/Grafana/Alertmanager/OpenSearch/fluent-operator).
+# CPU-ноды Standard Line, изолированы taint'ом dedicated=monitoring — поды
+# observability-стека единственные, кто сюда попадает (nodeSelector+tolerations
+# в addons/observability/values-selectel-mks.yaml).
+# Зоны (матрица доступности Selectel, регион ru-7): ru-7a.
+# Применяется kubectl'ом (инвариант №2 AGENTS.md):
+#   kubectl apply -f addons/karpenter/ru-7/nodepool-monitoring.yaml
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: monitoring
+spec:
+  # Низкий вес: пул выбирается только явным nodeSelector workload=monitoring
+  # (taint не пускает остальные поды).
+  weight: 10
+  template:
+    metadata:
+      labels:
+        workload: monitoring
+    spec:
+      nodeClassRef:
+        name: default
+        kind: SelectelNodeClass
+        group: karpenter.k8s.selectel
+      expireAfter: 720h
+      # Изоляция пула: без толерации сюда никто не попадёт
+      taints:
+        - key: dedicated
+          value: monitoring
+          effect: NoSchedule
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: ["ru-7a"]   # поправьте под свой сегмент
+        - key: karpenter.k8s.selectel/instance-category
+          operator: In
+          values: ["SL"]     # Standard Line (CPU)
+        - key: karpenter.k8s.selectel/instance-cpu
+          operator: Gt
+          values: ["3"]      # ≥4 vCPU
+        # instance-memory — МЕГАБАЙТЫ (лейбл ноды: 4096 = 4 ГБ), не ГБ!
+        # На 2 vCPU/4ГБ (SL2.2-4096) нода уходила в MemoryPressure
+        # (проверено 2026-09-14)
+        - key: karpenter.k8s.selectel/instance-memory
+          operator: Gt
+          values: ["8191"]   # ≥8 ГБ: 2×OpenSearch (JVM+page cache) +
+                            # Prometheus 2Gi + Grafana + операторы + Dashboards
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+  # Порог: суммарные лимиты пула; при cpu 16/mem 32Gi Karpenter не мог
+  # заменить ноды (все подходящие типы «exceed limits», см. события NodeClaim)
+  limits:
+    cpu: "32"
+    memory: 64Gi

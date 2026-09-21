@@ -1,0 +1,22 @@
+# «Якорный» Service для HTTPRoute от aibrix modelrouter (BackendNotFound без
+# него — якорный Service из чарта inference-charts). Реальный роутинг на поды выполняет
+# gateway-plugins через заголовок target-pod (original_dst), поэтому обычного
+# selector-сервиса достаточно.
+# «Якорный» Service для HTTPRoute от aibrix modelrouter (BackendNotFound без
+# него). Реальный роутинг на поды выполняет gateway-plugins через заголовок
+# target-pod (original_dst), поэтому обычного selector-сервиса достаточно.
+# Имя СТРОГО = model.aibrix.ai/name = --served-model-name (требование AIBrix).
+apiVersion: v1
+kind: Service
+metadata:
+  name: deepseek-r1-distill-llama-8b
+  namespace: default
+  labels:
+    model.aibrix.ai/name: deepseek-r1-distill-llama-8b
+spec:
+  selector:
+    model.aibrix.ai/name: deepseek-r1-distill-llama-8b
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

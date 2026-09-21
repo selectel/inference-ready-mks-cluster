@@ -1,0 +1,17 @@
+model: Kwai-Kolors/Kolors-diffusers
+
+modelParameters:
+  pipeline: kolors
+
+inference:
+  serviceName: kolors-diffusers
+  serviceNamespace: default
+  accelerator: gpu
+  framework: diffusers
+
+  modelServer:
+    image:
+      repository: diffusers/diffusers-pytorch-cuda
+      tag: latest
+    deployment:
+      # Selectel: выбор карты — gpuNames/gpuMinVramGb (instanceType апстрима)

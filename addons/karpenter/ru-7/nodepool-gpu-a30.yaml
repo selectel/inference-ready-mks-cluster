@@ -1,0 +1,58 @@
+# NodePool: GPU A30 — 1–8B bf16.
+# Зоны (матрица доступности Selectel, регион ru-7): ru-7a.
+# ВАЖНО (не проверено): точное значение instance-gpu-name сверьте после первой
+# поднятой ноды: kubectl describe node | grep instance-gpu-name — и поправьте values.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: gpu-a30
+spec:
+  # Приоритет при выборе пула (больше = предпочтительнее).
+  # По умолчанию предпочитаем ДЕШЁВЫЙ GPU (меньше VRAM = выше вес):
+  # под без селектора получает наименее дорогой подходящий пул.
+  # Тяжёлые модели адресуются явным nodeSelector: {gpu: <имя>}.
+  weight: 40
+  template:
+    metadata:
+      labels:
+        workload: inference
+        gpu: a30
+        # VRAM карты (ГБ) — для nodeAffinity (Gt) из inference-charts
+        gpu-vram: "24"
+    spec:
+      nodeClassRef:
+        name: default
+        kind: SelectelNodeClass
+        group: karpenter.k8s.selectel
+      # expireAfter — поле template.spec (в spec.disruption его в karpenter.sh/v1 НЕТ).
+      expireAfter: 720h
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: ["ru-7a"]   # поправьте под свой сегмент
+        - key: karpenter.k8s.selectel/instance-category
+          operator: In
+          values: ["GL"]
+        - key: karpenter.k8s.selectel/instance-gpu-name
+          operator: In
+          values: ["A30"]   # не проверено — см. комментарий выше
+        - key: karpenter.k8s.selectel/instance-gpu-count
+          operator: Gt
+          values: ["0"]
+      # startupTaints для Cilium-кластеров (MKS по умолчанию — Calico):
+      #   - key: node.cilium.io/agent-not-ready
+      #     value: "true"
+      #     effect: NoExecute
+      #   - key: node.cilium.io/agent-not-ready
+      #     effect: NoSchedule
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    # Для GPU-нод не спешим консолидировать: холодный старт = загрузка модели.
+    consolidateAfter: 5m
+  limits:
+    # Лимит на ВСЕ ноды пула суммарно. Квота ускорителей по умолчанию — 32 на зону.
+    cpu: "32"
+    memory: 128Gi

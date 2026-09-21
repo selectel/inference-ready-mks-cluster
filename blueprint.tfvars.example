@@ -1,0 +1,147 @@
+# =============================================================================
+# ЕДИНЫЙ blueprint-файл значений для ОБОИХ terraform-корней.
+# Скопируйте в blueprint.tfvars (в .gitignore) и заполните; при apply указывайте
+# его явным флагом из каталога корня:
+#   terraform -chdir=infra/01-cluster apply -var-file=../../blueprint.tfvars
+#   TF_VAR_kubeconfig_path=... TF_VAR_cluster_id=... terraform -chdir=infra/02-addons apply -var-file=../../blueprint.tfvars
+# (лишние для корня переменные terraform игнорирует — будет Warning
+# "value for undeclared variable", это ожидаемо; приглушает -compact-warnings).
+# kubeconfig_path и cluster_id СЮДА НЕ ПИСАТЬ: это outputs 01-корня, они
+# передаются в 02-addons окружением (TF_VAR_*) — см. README, быстрый старт.
+# Секреты можно через окружение: TF_VAR_sel_password, TF_VAR_dns_user_password.
+# =============================================================================
+
+# --- Аккаунт Selectel (кластер): 01-cluster ---
+
+sel_domain_name  = "12345"               # ID аккаунта Selectel
+sel_username     = "user123456"          # Пользователь с правами iam.admin
+sel_password     = ""                    # Пароль (или TF_VAR_sel_password)
+
+region            = "ru-7"               # пул (H100 — ru-7b, A100 40Gb — ru-7a, L4 — ru-6a/ru-7a)
+availability_zone = "ru-7a"               # сегмент system-нодгруппы
+
+project_name          = "inference-mks"
+project_user_name     = "tf-user"
+project_user_password = "CHANGE_ME_1a2b"
+
+cluster_name = "inference-mks"
+kube_version = ""                         # пусто = default-версия пула (1.34–1.36)
+
+# CNI кластера: CALICO (дефолт) или CILIUM.
+cni_type = "CALICO"
+
+# Тип загрузочного диска system-нод: basic, universal или fast.
+system_volume_category = "universal"
+
+# --- Кластер: 02-addons ---
+
+# Тумблеры компонентов — что устанавливать (дефолты variables.tf включают всё;
+# здесь продублированы явно — выключайте ненужное):
+install_karpenter   = true   # автоскейлер нод: GPU-пулы + CPU (monitoring)
+install_envoy_gateway  = true   # Envoy Gateway (нужен для шлюза AIBrix)
+install_aibrix         = true   # контроль-плейн LLM-инференса
+install_litellm        = true   # auth-слой (virtual keys) перед AIBrix
+install_cert_manager   = true   # cert-manager + Selectel DNS01-webhook (нужен домен, см. ниже)
+install_external_dns   = true   # external-dns + Selectel-вебхук (нужен домен, см. ниже)
+install_openwebui      = true   # OpenWebUI, веб-морда чата (требует install_litellm
+                                # + storage_class_name)
+install_n8n            = true   # n8n, автоматизации (требует storage_class_name)
+install_gpu_operator   = true   # NVIDIA GPU Operator, classic: драйвер + device plugin
+                                # (нужен NodeClass с installNvidiaDevicePlugin: false;
+                                # addons/gpu-operator/README.md; DRA — отдельно в addons/dra-test)
+install_cnpg           = true   # CloudNativePG: кластеры PostgreSQL для litellm/n8n/openwebui
+                                # (кластеры БД — kubectl, rendered/cnpg-clusters.yaml; addons/cnpg)
+install_valkey         = true   # общий redis (valkey) для litellm/n8n/openwebui (addons/valkey)
+install_dex            = true   # SSO (OIDC) для веб-панелей: OpenWebUI/LiteLLM нативно,
+                                # n8n — через Envoy SecurityPolicy (нужны домен
+                                # и sso_admin_email; addons/dex)
+install_csi_s3         = true   # csi-s3 (geesefs): монтирование S3-контейнера с весами моделей
+                                # (требует create_object_storage=true в 01-корне; addons/models)
+install_observability = true   # Prometheus+Grafana+Alertmanager, OpenSearch+Fluent Bit:
+                                # метрики/логи/дашборды/алерты aibrix, litellm, CNPG, n8n,
+                                # vLLM, GPU (DCGM); OIDC-вход через dex, grafana.<домен>
+                                # (требует install_dex; addons/observability/README.md)
+
+# Модели vLLM через чарт inference-charts (веса — из S3, требует install_csi_s3
+# и hf_models с алиасом = каталогу весей). Ключ = имя модели (= --served-model-name);
+# preset — файл addons/inference-charts/values-<preset>.yaml; values — точечные
+# переопределения (gpuNames/gpuMinVramGb, replicas и т.п.). Свой пресет — положить
+# values-<имя>.yaml рядом с остальными.
+deploy_models = {
+  "deepseek-r1-distill-llama-8b" = { preset = "deepseek-r1-distill-llama-8b-s3" }
+  # "qwen3-32b" = {
+  #   preset = "qwen3-32b-s3"
+  #   values = { gpuNames = ["h200"] }   # вместо gpuMinVramGb из пресета
+  # }
+}
+
+# Веса моделей: алиас (каталог в S3-контейнере, --model /models/<алиас>)
+# → repo_id HuggingFace. Смена списка пересоздаёт Job загрузки.
+hf_models = {
+  deepseek-r1-distill-llama-8b = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+  # Qwen3-32B                    = "Qwen/Qwen3-32B"
+}
+
+# Токен HuggingFace для job'ы загрузки весов (Secret hf-token, env HF_TOKEN):
+# без него загрузка анонимная и может упереться в rate-limit.
+# huggingface_token = "hf_..."                # или TF_VAR_huggingface_token
+
+# CNPG: размер кластеров БД (addons/cnpg)
+# cnpg_instances    = 2     # primary + реплика
+# cnpg_storage_size  = "10Gi"
+
+# --- Объектное хранилище S3 (01-cluster; веса моделей + бэкапы CNPG) ---
+# ДЕФОЛТ: этот корень создаёт контейнеры и S3-ключи (create_object_storage=true);
+# в 02-addons креды придут из state 01-корня.
+create_object_storage = true
+# s3_bucket_name = "inference-models"       # уникально в пуле, 3–63 символов (дефолт)
+# backup_bucket_name = "inference-cnpg-backups"  # бэкапы CNPG (барман; дефолт)
+#
+# ВАРИАНТ 2: контейнеры созданы вручную/в панели — заполните s3_* для 02-addons
+# (create_object_storage = false и там тоже):
+# s3_bucket_name = "inference-models"
+# s3_access_key  = "..."   # или TF_VAR_s3_access_key
+# s3_secret_key  = "..."   # или TF_VAR_s3_secret_key
+# s3_endpoint    = "https://s3.ru-7.storage.selcloud.ru"
+# backup_bucket_name = "..."   # только для 02-корня (бэкапы CNPG)
+
+# --- SSO (dex; 02-addons) ---
+# Email админ-пользователя dex. Единый вход: этот же email/пароль — админ
+# OpenWebUI (init-job) и owner n8n (init-job); в LiteLLM роль proxy_admin
+# выдаётся автоматически при первом SSO-входе (PROXY_ADMIN_ID = email).
+# Пароль генерируется (Secret dex-admin) или задайте свой (sso_admin_password)
+# — в обоих случаях только в blueprint.tfvars.
+# sso_admin_email = "admin@example.com"
+# sso_admin_password = ""   # пусто = сгенерировать (kubectl -n dex get secret dex-admin ...)
+
+# StorageClass для PVC OpenWebUI/n8n — имя зависит от региона:
+# `kubectl get storageclass` (напр. fast2.ru-6). Обязателен при этих тумблерах.
+# storage_class_name   = "fast2.ru-7"
+
+# --- Домен и DNS (02-addons; сами аддоны — install_cert_manager/install_external_dns) ---
+# Домен всегда должен быть делегирован на NS Selectel
+# (a.ns.selectel.ru … d.ns.selectel.ru): при покупке в Selectel —
+# автоматически, со стороннего регистратора — сменить NS вручную:
+#   https://docs.selectel.ru/domains/   https://docs.selectel.ru/dns-hosting/
+# Регистрация (покупка) домена вручную — через terraform/API нельзя.
+#
+# ВАРИАНТ 1 (дефолт): create_zone_and_user = true
+# Зона в DNS-хостинге и сервисный пользователь создаются terraform'ом
+# в аккаунте/проекте кластера (01-cluster) — при непустом dns_zone_name И
+# включённом install_cert_manager или install_external_dns (оба выключены —
+# ничего не создаётся). Пароль сгенерируется сам:
+create_zone_and_user = true
+# dns_zone_name = "example.com"
+#
+# ВАРИАНТ 2: create_zone_and_user = false
+# Зона и пользователь с доступом к DNS-хостингу УЖЕ существуют — в любом
+# аккаунте Selectel (этом же или отдельном). Заполните все dns_*:
+# create_zone_and_user = false
+# dns_zone_name     = "example.com"
+# dns_user_name     = "dns-automation"
+# dns_user_password = ""                    # или TF_VAR_dns_user_password
+# dns_account_id    = "67890"                # ID аккаунта с зоной
+# dns_project_id    = "abcdef..."            # ID проекта зоны
+
+# Email для Let's Encrypt (уходит в отрендеренный ClusterIssuer — см. output cert_apply_command)
+# letsencrypt_email = "ops@example.com"
