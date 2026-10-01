@@ -224,7 +224,11 @@ resource "helm_release" "litellm" {
   name      = "litellm"
   chart     = "../../addons/litellm/chart"
   namespace = "litellm"
-  timeout   = 600
+  # Не ждать готовности подов в apply: БД litellm-db — внешний CNPG-кластер,
+  # применяемый kubectl'ом ПОСЛЕ этого apply (CRD-инвариант: оператор ставится
+  # этим же apply). С ожиданием первый apply всегда завершается failed-релизом.
+  wait    = false
+  timeout = 600
 
   values = [
     # values — шаблон (домен только в blueprint, подставляется из зоны)
@@ -434,7 +438,11 @@ resource "helm_release" "openwebui" {
   chart      = "open-webui"
   version    = var.openwebui_chart_version
   namespace  = kubernetes_namespace_v1.openwebui[0].metadata[0].name
-  timeout    = 600
+  # Не ждать готовности подов в apply: БД openwebui-db — внешний CNPG-кластер,
+  # применяемый kubectl'ом ПОСЛЕ этого apply (CRD-инвариант). С ожиданием
+  # первый apply завершается failed-релизом.
+  wait    = false
+  timeout = 600
 
   values = [
     templatefile("../../addons/openwebui/values-selectel-mks.yaml.tpl", {
@@ -477,9 +485,12 @@ resource "helm_release" "n8n" {
   version          = var.n8n_chart_version
   namespace        = "n8n"
   create_namespace = true
-  # Поды стартуют после готовности CNPG-кластера n8n-db и valkey — при
-  # cold-start с crash-бэкоффом 5m дефолтных 300s helm-ожидания мало
-  timeout = 900
+  # Не ждать готовности подов в apply: БД n8n-db — внешний CNPG-кластер,
+  # применяемый kubectl'ом ПОСЛЕ этого apply (CRD-инвариант: оператор ставится
+  # этим же apply). С ожиданием первый apply всегда завершается failed-релизом
+  # (раньше стоял timeout 900 — тоже не спасал: БД на момент apply не созданы).
+  wait    = false
+  timeout = 600
 
   values = [
     templatefile("../../addons/n8n/values-selectel-mks.yaml.tpl", {

@@ -164,15 +164,11 @@ cp blueprint.tfvars.example blueprint.tfvars   # заполнить креды �
 terraform -chdir=infra/01-cluster init -upgrade
 terraform -chdir=infra/01-cluster apply -var-file=../../blueprint.tfvars
 
-# 2.1 Кластеры PostgreSQL (CNPG) — CRD-ресурсы, применяются kubectl
-#     ВАЖНО: до этого шага поды litellm/n8n/openwebui не смогут подняться
-#     из-за отсутствия баз данных.
-export KUBECONFIG=$(terraform -chdir=infra/01-cluster output -raw kubeconfig_path)
-kubectl apply -f infra/02-addons/rendered/cnpg-clusters.yaml
-
-# 2.2 Компоненты в кластере (тумблеры install_* — в том же blueprint.tfvars)
-#    kubeconfig_path и cluster_id — динамические outputs 01-корня, в файл их
-#    не пишем: передаём окружением (они required-переменные 02-корня).
+# 2.1 Компоненты в кластере (тумблеры install_* — в том же blueprint.tfvars)
+#     kubeconfig_path и cluster_id — динамические outputs 01-корня, в файл их
+#     не пишем: передаём окружением (они required-переменные 02-корня).
+#     Релизы litellm/n8n/openwebui ставятся с wait=false: их поды стартуют
+#     после подъёма БД (шаг 2.2), apply не ждёт их готовности.
 terraform -chdir=infra/02-addons init -upgrade
 TF_VAR_kubeconfig_path=$(terraform -chdir=infra/01-cluster output -raw kubeconfig_path) \
 TF_VAR_cluster_id=$(terraform -chdir=infra/01-cluster output -raw cluster_id) \
@@ -180,6 +176,16 @@ terraform -chdir=infra/02-addons apply -var-file=../../blueprint.tfvars
 
 #    Секреты можно не хранить в файле, а передавать окружением:
 #    TF_VAR_sel_password=... (стандартный механизм Terraform).
+
+# 2.2 Кластеры PostgreSQL (CNPG) — CRD-ресурсы, применяются kubectl ПОСЛЕ
+#     шага 2.1: оператор CNPG (и CRD Cluster) ставится apply'ем 02-корня,
+#     он же рендерит этот манифест. До подъёма БД поды litellm/n8n/
+#     openwebui не смогут работать — после этого шага они стартуют сами
+#     (несколько минут crash-recovery).
+export KUBECONFIG=$(terraform -chdir=infra/01-cluster output -raw kubeconfig_path)
+kubectl apply -f infra/02-addons/rendered/cnpg-clusters.yaml
+kubectl wait --for=condition=Ready pod -l cnpg.io/cluster --all -A --timeout=5m
+kubectl get pods -A | grep -vE 'Running|Completed'   # дождаться пустого списка
 
 # 3. Домен и HTTPS-вход (тумблеры включены по умолчанию; см. «Домен и DNS» выше)
 #    В blueprint.tfvars: dns-переменные + letsencrypt_email
@@ -220,6 +226,36 @@ curl https://$LITELLM_HOSTNAME/v1/chat/completions -H "Authorization: Bearer $KE
 
 Дальше: LoRA-ферма и динамическая загрузка адаптеров — `addons/aibrix/docs/04`,
 автоскейлинг по LLM-метрикам — `addons/aibrix/docs/03`, сценарии использования — `addons/aibrix/docs/05`.
+
+## Известные особенности первого деплоя
+
+- **403 на создании S3-контейнеров** в первом apply 01-корня: роль `s3.admin`
+  у service-пользователя применяется с задержкой ~5 минут. Лечение —
+  просто повторить apply, ничего не меняя.
+- **Режим без домена** (`install_dex = false` вместе с DNS/cert-тумблерами):
+  поды litellm и openwebui висят в `CreateContainerConfigError` — values
+  ссылаются на секреты dex. Релизы при этом не failed (wait=false): после
+  apply создайте заглушки — поды подхватят их сами (kubelet отслеживает
+  отсутствующие secretRef и перезапустит контейнер, минуты):
+  ```bash
+  kubectl -n litellm create secret generic dex-litellm-client --from-literal=client-secret=unused
+  kubectl -n litellm create secret generic litellm-proxy-admin-id --from-literal=proxy-admin-id=nobody@example.com
+  kubectl -n openwebui create secret generic dex-openwebui-client --from-literal=client-secret=unused
+  ```
+- **Повторный apply после упавшего релиза** может падать «cannot re-use a
+  name that is still in use» (helm-релиз в статусе failed, например после
+  реальной ошибки установки): лечение — `helm -n <namespace> uninstall <имя>`
+  и повторить apply 02-корня.
+- **Ручная переустановка n8n**: чарт держит PVC через helm resource-policy
+  keep — после `helm uninstall` PVC остаётся, новая установка наследует
+  данные прежней, под падает с exit code 1 без логов. При чистой
+  переустановке удалить PVC вручную
+  (`kubectl -n n8n delete pvc n8n-main-persistence`).
+- **Холодный старт модели**: первый `rollout status` может превысить
+  progressDeadline — это ожидаемо (провижининг GPU-ноды Karpenter, установка
+  драйвера GPU Operator, pull образа vLLM ~10 ГБ, чтение весей с S3).
+  `startupProbe` рассчитан на медленный сценарий; повторный
+  `kubectl rollout status ... --timeout=30m` после применения NodePool'ов.
 
 ## Почему два terraform-корня
 
@@ -281,9 +317,11 @@ CRD. Решение пересмотреть, если появится потр
 
 Простой путь — удалить сразу корень `infra/01-cluster`: вместе с кластером
 уходят все аддоны, ноды Karpenter, PVC и Octavia-балансировщики, ничего
-внутри кластера чистить и дожидаться не нужно. S3-контейнеры (веса моделей,
-бэкапы CNPG) Selectel очищает при удалении контейнера — предварительно
-опустошать их не надо.
+внутри кластера чистить и дожидаться не нужно. State 02-корня при этом
+ссылается на уже несуществующий кластер и закрывается удалением файлов
+(шаг 2). Аккуратная альтернатива — сначала destroy корня `02-addons`
+(пока жив kubeconfig: нужны `TF_VAR_kubeconfig_path` и
+`TF_VAR_cluster_id`), затем `01-cluster`: оба state закрываются штатно.
 
 ```bash
 # 1) Кластер + аддоны + ноды Karpenter + LB + сеть + S3 + проект
@@ -297,6 +335,16 @@ rm -f infra/02-addons/terraform.tfstate*
 # 3) Остатки terraform: state 01-корня и kubeconfig
 rm -f infra/01-cluster/terraform.tfstate* infra/01-cluster/kubeconfig
 ```
+
+⚠ **S3-контейнеры удаляются только пустыми**: API хранилища отвечает
+409 Conflict на DELETE непустого контейнера (веса моделей, бэкапы CNPG) 
+— terraform destroy останавливается, не удалив
+контейнеры, service-пользователя и проект. Лечение: удалить объекты в
+панели (Объектное хранилище → контейнер) и повторить destroy 01-корня.
+Если контейнеры удалены руками целиком — предварительно убрать их из
+state: `terraform -chdir=infra/01-cluster state rm \
+'openstack_objectstorage_container_v1.models[0]' \
+'openstack_objectstorage_container_v1.cnpg_backups[0]'`.
 
 После destroy стоит проверить в панели, что в проекте не осталось плавающих
 IP (могут осиротеть при удалении LB — зависит от пула, не проверено на всех).
