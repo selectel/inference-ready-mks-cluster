@@ -206,6 +206,9 @@ kubectl apply -f addons/karpenter/ru-6/nodepool-gpu-rtx4090-48.yaml # 8–32B
 kubectl apply -f addons/karpenter/ru-6/nodepool-gpu-rtx6000-pro.yaml # 32B+, high RPS
 kubectl apply -f addons/karpenter/ru-6/nodepool-gpu-h200.yaml       # 70B+ (ru-6)
 # кластер в ru-7 — те же команды с директорией addons/karpenter/ru-7/
+# Проверка: Karpenter провижинит GPU-ноду под Pending-под модели (1–3 мин) —
+# NodeClaim появится и постепенно заполнится NODE/READY:
+kubectl get nodeclaims -w   # Ctrl+C когда нода Ready
 
 # 5. Модели — через deploy_models в blueprint.tfvars (terraform, шаг 2);
 #    пресеты: addons/inference-charts/values-<preset>.yaml. Веса автоматически
