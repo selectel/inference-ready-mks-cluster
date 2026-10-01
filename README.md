@@ -163,6 +163,11 @@ cp blueprint.tfvars.example blueprint.tfvars   # заполнить креды �
 # 1. Инфраструктура (проект, сеть, кластер, CPU-нодгруппа, kubeconfig)
 terraform -chdir=infra/01-cluster init -upgrade
 terraform -chdir=infra/01-cluster apply -var-file=../../blueprint.tfvars
+#    ВАЖНО: первый apply, как правило, падает с 403 на создании
+#    S3-контейнеров (inference-models, inference-cnpg-backups) — это норма:
+#    роль s3.admin у service-пользователя применяется с задержкой ~5 минут
+#    (проверено в ru-6 и ru-7). Подождите и повторите apply без изменений —
+#    на этот раз он дойдёт до конца.
 
 # 2.1 Компоненты в кластере (тумблеры install_* — в том же blueprint.tfvars)
 #     kubeconfig_path и cluster_id — динамические outputs 01-корня, в файл их
