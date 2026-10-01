@@ -189,8 +189,6 @@ terraform -chdir=infra/02-addons apply -var-file=../../blueprint.tfvars
 #     (несколько минут crash-recovery).
 export KUBECONFIG=$(terraform -chdir=infra/01-cluster output -raw kubeconfig_path)
 kubectl apply -f infra/02-addons/rendered/cnpg-clusters.yaml
-kubectl wait --for=condition=Ready pod -l cnpg.io/cluster --all -A --timeout=5m
-kubectl get pods -A | grep -vE 'Running|Completed'   # дождаться пустого списка
 
 # 3. Домен и HTTPS-вход (тумблеры включены по умолчанию; см. «Домен и DNS» выше)
 #    В blueprint.tfvars: dns-переменные + letsencrypt_email
