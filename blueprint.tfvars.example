@@ -79,6 +79,7 @@ deploy_models = {
 # → repo_id HuggingFace. Смена списка пересоздаёт Job загрузки.
 hf_models = {
   deepseek-r1-distill-llama-8b = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+  deepseek-lora = "li-long/DeepSeek-R1-Distill-Llama-8B-lora-financial-qa-model"
   # Qwen3-32B                    = "Qwen/Qwen3-32B"
 }
 

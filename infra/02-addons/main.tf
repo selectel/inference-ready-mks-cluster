@@ -74,6 +74,11 @@ resource "helm_release" "aibrix" {
   values = [
     file("../../addons/aibrix/chart/stable.yaml"),
     file("../../addons/aibrix/helm/values-selectel-mks.yaml"),
+    # ServiceMonitor AIBrix рендерится только при observability-стеке:
+    # без его CRD monitoring.coreos.com helm-провайдер не может смаппить
+    # kind и релиз падает (values-selectel-mks.yaml содержит статический
+    # prometheus.enable: true — переопределяем по тумблеру).
+    yamlencode({ prometheus = { enable = var.install_observability } }),
   ]
 
   # AIBrix создаёт Gateway/HTTPRoute при установке -> сначала нужны Gateway API CRD.

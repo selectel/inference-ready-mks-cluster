@@ -164,7 +164,13 @@ cp blueprint.tfvars.example blueprint.tfvars   # заполнить креды �
 terraform -chdir=infra/01-cluster init -upgrade
 terraform -chdir=infra/01-cluster apply -var-file=../../blueprint.tfvars
 
-# 2. Компоненты в кластере (тумблеры install_* — в том же blueprint.tfvars)
+# 2.1 Кластеры PostgreSQL (CNPG) — CRD-ресурсы, применяются kubectl
+#     ВАЖНО: до этого шага поды litellm/n8n/openwebui не смогут подняться
+#     из-за отсутствия баз данных.
+export KUBECONFIG=$(terraform -chdir=infra/01-cluster output -raw kubeconfig_path)
+kubectl apply -f infra/02-addons/rendered/cnpg-clusters.yaml
+
+# 2.2 Компоненты в кластере (тумблеры install_* — в том же blueprint.tfvars)
 #    kubeconfig_path и cluster_id — динамические outputs 01-корня, в файл их
 #    не пишем: передаём окружением (они required-переменные 02-корня).
 terraform -chdir=infra/02-addons init -upgrade

@@ -7,6 +7,9 @@
 # драйвер сам пишет в S3 в префикс тома (pvc-<uid>). Никаких boto3/кредов.
 # Альтернатива «скачать на диск ноды и залить в бакет» ловила DiskPressure
 # (вся модель 65 ГБ на диске system-ноды) — проверено 2026-09-11.
+# ВАЖНО: geesefs выгружает rename больших файлов фоновой S3-копией —
+# перед выходом пода обязательны сверка размеров + os.sync() + пауза
+# (без этого Job «успешно» завершается без доли файлов).
 # =============================================================================
 apiVersion: batch/v1
 kind: Job
@@ -41,11 +44,13 @@ spec:
               set -euo pipefail
               pip install --no-cache-dir --quiet "huggingface_hub"
               python - <<'PY'
-              import os, pathlib
+              import os, pathlib, time
               from huggingface_hub import HfApi, hf_hub_download
 
               api = HfApi()
               root = pathlib.Path("/models")
+              downloaded = False
+              targets = []  # (путь, размер по HF) для финальной сверки
 
               # MODELS: "repo=alias,repo=alias" — alias = каталог в томе
               for item in filter(None, os.environ["MODELS"].split(",")):
@@ -62,6 +67,7 @@ spec:
                            and pathlib.Path(s.rfilename).suffix.lower() not in skip]
                   for i, f in enumerate(files, 1):
                       dest = root / alias / f.rfilename
+                      targets.append((dest, f.size))
                       if dest.exists() and dest.stat().st_size == f.size:
                           print(f"   [{i}/{len(files)}] есть: {f.rfilename}", flush=True)
                           continue
@@ -69,6 +75,27 @@ spec:
                             f"({round(f.size/1e9,1)} ГБ)", flush=True)
                       hf_hub_download(repo_id=repo, filename=f.rfilename,
                                       local_dir=root / alias)
+                      downloaded = True
+
+              # Верификация и корректное завершение. geesefs (csi-s3) пишет
+              # в S3 асинхронно: rename файла после докачки выполняется
+              # фоновой S3-копией, и «наличие» файла в монтировании не
+              # гарантирует объект в бакете. Мгновенный выход пода обрывает
+              # копию — Job завершается успехом без файла (проверено
+              # 2026-09-30: два прогона без второго шарда весов 7 ГБ).
+              # Поэтому: сверка размеров всех файлов, os.sync() и пауза.
+              bad = [f"{d.name}: {d.stat().st_size if d.exists() else 'нет файла'}"
+                     f" != {sz}" for d, sz in targets
+                     if not d.exists() or d.stat().st_size != sz]
+              if bad:
+                  raise SystemExit("Размеры не совпали с HuggingFace "
+                                   "(перезапуск Job докачает): " + "; ".join(bad))
+              os.sync()
+              print(f"== сверка размеров ок: {len(targets)} файлов", flush=True)
+              if downloaded:
+                  print("== пауза 300 с — ожидание фоновой выгрузки geesefs в S3",
+                        flush=True)
+                  time.sleep(300)
               print("== готово", flush=True)
               PY
           env:
