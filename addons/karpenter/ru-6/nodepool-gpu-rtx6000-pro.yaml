@@ -40,7 +40,7 @@ spec:
           values: ["GL"]
         - key: karpenter.k8s.selectel/instance-gpu-name
           operator: In
-          values: ["RTX6000PRO"]   # проверено 2026-09-21: имя флейвора из бинарника karpenter v0.4.0, нода поднята
+          values: ["RTX6000PRO"]   # проверено: имя флейвора из бинарника karpenter v0.4.0, нода поднята
         - key: karpenter.k8s.selectel/instance-gpu-count
           operator: Gt
           values: ["0"]

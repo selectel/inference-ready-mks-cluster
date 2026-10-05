@@ -10,8 +10,8 @@ DRA (запросы по памяти GPU, ResourceClaims) — отдельны�
 без поддержки DynamicResources не провижинит ноды под DRA-поды).
 
 Проверено на живом кластере: Selectel MKS v1.36.2, ru-6, RTX 4090 (GL10),
-karpenter (кастомная сборка), 2026-09-10. Статус: classic-стек работает
-end-to-end; DRA-режим (GPUCluster) проверен до этого в тот же день.
+karpenter. Статус: classic-стек работает end-to-end; DRA-режим
+(GPUCluster) тоже проверен.
 
 ## Состав
 
@@ -28,9 +28,9 @@ helm/values-selectel-mks.yaml   classic-конфигурация (см. комм
 1. **SelectelNodeClass**: `installNvidiaDevicePlugin: false`
    (addons/karpenter/selectelnodeclass.yaml) — ноды Karpenter создаёт без
    MKS-стека (без device plugin и драйверов). Их ставит этот оператор.
-   ⚠ Поле поддерживается ТОЛЬКО кастомной сборкой karpenter: публичный чарт
+   ⚠ Поле поддерживается чартом Selectel karpenter 0.4.0 (публичный чарт
    `mks-charts/karpenter 0.3.1` его не знает — его контроллер стирает поле
-   из NodeClass (проверено 2026-09-10).
+   из NodeClass, проверено).
 
 ## Как это работает
 
@@ -70,8 +70,8 @@ kubectl delete gpucluster gpu-cluster   # оператор дренирует DR
 ```
 
 DRA-драйвер при этом можно оставить — отдельным чартом addons/dra-test/
-(сосуществует с device plugin через gpuResourcesEnabledOverride; проверено
-2026-09-10: classic-vLLM nvidia.com/gpu + DRA-claim 4Gi на одной карте).
+(сосуществует с device plugin через gpuResourcesEnabledOverride; проверено:
+classic-vLLM nvidia.com/gpu + DRA-claim 4Gi на одной карте).
 
 ## Проверка состояния
 
@@ -87,7 +87,7 @@ kubectl get nodes -o custom-columns='NODE:.metadata.name,GPU:.status.allocatable
   drop-in в /etc/containerd и шлёт containerd SIGHUP — на MKS-нодах
   (containerd 2.3.3) containerd после этого не восстанавливается и нода
   умирает («Kubelet stopped posting node status»), проверено дважды,
-  детерминированно (2026-09-10). В NPI-режиме — noop-конфигуратор:
+  детерминированно. В NPI-режиме — noop-конфигуратор:
   конфиг containerd не читается и не изменяется, рестарта нет; инжекция
   устройств через NPI-плагин (containerd 2.x — NPI включён по умолчанию).
 - **Переключение gpuCluster→clusterPolicy**: GPUCluster CR остаётся после

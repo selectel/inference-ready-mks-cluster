@@ -6,14 +6,6 @@
 #   deploy_models          — модели vLLM через чарт inference-charts
 # =============================================================================
 
-# --- Karpenter (Selectel) -----------------------------------------------------
-# Возвращён в terraform 2026-09-15 (чарт 0.4.0: кастомная сборка 48f2256,
-# стоявшая вручную с 2026-09-10, вошла в релиз — поле SelectelNodeClass
-# installNvidiaDevicePlugin). Живой релиз импортируется в state:
-# terraform import helm_release.karpenter[0] kube-system/karpenter.
-# CRD чарта при upgrade helm не обновляет: kubectl apply -f crds/ из чарта
-# (см. README, «Обновление Karpenter»).
-
 resource "helm_release" "karpenter" {
   count = var.install_karpenter ? 1 : 0
 
@@ -256,11 +248,6 @@ resource "random_password" "litellm_db_password" {
   length  = 24
   special = false
 }
-
-# ⛠ МИГРАЦИЯ 2026-09-11: БД LiteLLM переведена на внешний кластер CNPG
-# litellm-db (addons/cnpg) — встроенный postgres-subchart больше не ставится.
-# Пароль выше временно сохранён в state, чтобы random_password не пересоздавался
-# (чужие ресурсы не ломаются); удалить после сверки plan = no-op.
 
 # --- CNPG: PostgreSQL для litellm / n8n / openwebui ----------------------------
 # Оператор (helm) — terraform; кластеры Cluster (CRD) — kubectl из

@@ -1,6 +1,6 @@
 # 06 — Заметки по платформе Selectel MKS (для деплоя AIBrix + vLLM)
 
-**Источники:** только официальная документация Selectel ([docs.selectel.ru](https://docs.selectel.ru/), EN-версии по `/en/`; русские зеркала — те же пути без `/en`). Страницы обновлялись в июле–сентябре 2026 г.
+**Источники:** только официальная документация Selectel ([docs.selectel.ru](https://docs.selectel.ru/), EN-версии по `/en/`; русские зеркала — те же пути без `/en`).
 
 ---
 
@@ -90,7 +90,7 @@
 
 ## 7. Мирринг образов
 
-- Pull-through-зеркало **`docker-registry.selectel.ru`** (используется в манифестах этого репозитория: образы vLLM и утилит в `addons/models/`, `addons/openwebui/`); в доках Selectel отдельно не описано — проверено практикой (2026-09).
+- Pull-through-зеркало **`docker-registry.selectel.ru`** (используется в манифестах этого репозитория: образы vLLM и утилит в `addons/models/`, `addons/openwebui/`); в доках Selectel отдельно не описано — проверено практикой.
 - Образы AIBrix живут на `ghcr.io` (vllm-project/aibrix) и `docker.io` (redis, jaeger, otel). Egress на `docker.io` подтверждён официальными инструкциями; **egress на `ghcr.io` в доках явно не упомянут — проверьте из пода на тестовом кластере** (установка AIBrix из `addons/aibrix/chart/` прошла успешно — egress был).
 - Управляемый Container Registry Selectel и его интеграция с MKS здесь не используется (образы — через зеркало и прямые репозитории).
 

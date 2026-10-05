@@ -14,9 +14,9 @@ resource "selectel_iam_serviceuser_v1" "project_user" {
   password = var.project_user_password
 
   # member — управление ресурсами проекта (сеть, кластер);
-  # s3.admin — создание S3-контейнеров через Swift API (s3.tf). На 2026-09
-  # роль member в scope проекта документирована как дающая доступ к S3,
-  # но Swift API отдаёт 403 даже на листинг — работает только с s3.admin
+  # s3.admin — создание S3-контейнеров через Swift API (s3.tf). Роль member
+  # в scope проекта документирована как дающая доступ к S3, но Swift API
+  # отдаёт 403 даже на листинг — работает только с s3.admin
   # (проверено на свежем проекте; вероятно, изменение модели доступа S3).
   role {
     role_name  = "member"

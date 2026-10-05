@@ -102,9 +102,7 @@ README.md           Архитектура, quickstart, rationale решений
    держим `enable_autorepair = false`, нодгруппы без `enable_autoscale`.
    GPU-нодгруппы в terraform не описываем вовсе — ноды создаёт Karpenter
    (чарт Selectel `0.4.0`, OCI `ghcr.io/selectel/mks-charts`, helm_release
-   в 02-addons; историческая справка: с 2026-09-10 по 2026-09-15 стояла
-   ручная кастомная сборка 48f2256 — вошла в релиз 0.4.0 как поле
-   SelectelNodeClass.installNvidiaDevicePlugin).
+   в 02-addons).
 4. **Порядок values AIBrix**: сначала `chart/stable.yaml` (пин образов
    v0.7.0), потом `helm/values-selectel-mks.yaml` — побеждает последний.
    Дефолтный `values.yaml` чарта пиннит `:nightly` — никогда не ставить
@@ -215,10 +213,6 @@ rm -rf addons/aibrix/chart && cp -r /tmp/aibrix/dist/chart addons/aibrix/chart
   `https`, ни лейбла `control-plane` — апстримовский SM не матчит ничего;
   метрики контроллера — обычный HTTP на :8080, без kube-rbac-proxy).
   Включается `prometheus.enable: true` в values.
-
-(Патч envoyDaemonSet в gateway-instance/gateway.yaml удалён 09.09.2026:
-нужен был только для пула внешнего LB AIBrix, а LB убран — сервис
-дата-плейна теперь ClusterIP, хватает upstream `envoyDeployment`.)
 
 **Изменение набора GPU-пулов**: добавить/править yaml в `addons/karpenter/ru-<регион>/`
 (пул одного GPU в разных регионах — отдельный файл в каждой директории,

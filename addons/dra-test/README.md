@@ -15,7 +15,7 @@
 >   триггер-под (manifests/node-trigger.yaml). Заполнить извне
 >   (NodePool/NodeClass/NodeOverlay) нельзя: у этих API нет DRA-полей.
 >
-> Всё технически работает end-to-end (проверено 2026-09-09/10): драйвер,
+> Всё технически работает end-to-end (проверено): драйвер,
 > DRA-плагин, шаринг карты по VRAM, vLLM с memory-claim. Развернуть DRA
 > можно, пока вы сами поднимаете/держите GPU-ноды — но без автоскейлинга
 > под DRA-нагрузку. Пересмотреть при релизе Selectel Karpenter с
@@ -45,8 +45,8 @@
 >
 > ## Грабли
 >
-> - **Стейл driver-root после рестарта драйвер-DS на ноде** (проверено
->   2026-09-14): gpu-operator перезапускает под драйвера (upgrade) и
+> - **Стейл driver-root после рестарта драйвер-DS на ноде** (проверено):
+>   gpu-operator перезапускает под драйвера (upgrade) и
 >   пересоздаёт `/run/nvidia/driver`; под DRA-плагина держит bind-маунт на
 >   старую (теперь пустую) версию каталога → kubelet-подготовка падает
 >   «FailedPrepareDynamicResources: ... invalid CDI Spec: empty device
@@ -58,7 +58,7 @@
 >   claim** (аннотация `resource.kubernetes.io/extended-resource-claim`,
 >   мостик extended-resources в драйвере): такой claim аллоцирует карту и
 >   занимает ВСЮ её capacity в DRA-учёте → на этой ноде другие DRA-claim'ы
->   уже не поместятся (наблюдение 2026-09-14: qwen3-32b, consumedCapacity =
+>   уже не поместятся (наблюдение: qwen3-32b, consumedCapacity =
 >   вся карта; старый под deepseek без claim'а — бриджинг действует на
 >   поды, создаваемые после установки драйвера).
 >
@@ -74,7 +74,7 @@
 > # smoke: под с claim'ом 8Gi → kubectl exec nvidia-smi
 > ```
 >
-> Проверено 2026-09-10: сосуществует с device plugin'ом из gpu-operator
+> Проверено: сосуществует с device plugin'ом из gpu-operator
 > (classic-vLLM на nvidia.com/gpu + DRA-claim 4Gi на одной RTX 4090
 > одновременно, CDI-инжекция работает).
 >
@@ -82,9 +82,9 @@
 > manifests/resourceclaim-templates.yaml: CEL-синтаксис, ключи capacity,
 > порог 24ГБ≠24Gi, обязательность явного capacity на расшаренной карте.
 >
-> Оставшийся ниже текст — архивы экспериментов 2026-09-08 (DRA поверх
-> MKS-стека) и 2026-09-09/10 (gpu-operator в GPUCluster-режиме — рабочий,
-> заменён совмещением со standalone-чартом ради classic-пути в production).
+> Оставшийся ниже текст — архивы экспериментов: DRA поверх MKS-стека и
+> gpu-operator в GPUCluster-режиме (рабочий, заменён совмещением со
+> standalone-чартом ради classic-пути в production).
 
 ---
 
@@ -99,7 +99,7 @@
 про GPU Operator — здесь тот же принцип: стек GPU на нодах от Selectel).
 Обратно откатывается полностью (см. «Откат»).
 
-## Результат (проверено на живом кластере, 2026-09-08, ru-6, RTX 4090)
+## Результат (проверено на живом кластере, ru-6, RTX 4090)
 
 **DRA на MKS работает.** Оба теста пройдены: под с ResourceClaim получил GPU
 на существующей ноде и на поднятой Karpenter'ом. Рецепт ниже — воспроизведённая

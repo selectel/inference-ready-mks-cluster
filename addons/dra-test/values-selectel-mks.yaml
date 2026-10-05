@@ -21,7 +21,7 @@ resources:
 # Драйвер на нодах ставит gpu-operator через NVIDIADriver CR — он живёт в
 # /run/nvidia/driver (hostPaths.driverInstallDir). Дефолт «/» предполагает
 # драйвер прямо в хост-ОС — у нас так: без этого init-контейнер зависает
-# в ожидании nvidia-smi/libnvidia-ml (проверено 2026-09-10).
+# в ожидании nvidia-smi/libnvidia-ml (проверено).
 nvidiaDriverRoot: /run/nvidia/driver
 
 gpuResourcesEnabledOverride: true

@@ -129,7 +129,7 @@ client_secret; dex-клиент `opensearch-dashboards` — в
   «Log in with SSO» (dex: email + SSO-пароль) и локальный вход
   (dashboard_user).
 
-Грабли (проверено 2026-09-14):
+Грабли (проверено):
 
 - **Redirect URI dex — `/auth/openid/login`**, не `/auth/openid/callback`
   (OPENID_AUTH_LOGIN в security-dashboards 2.19).

@@ -40,7 +40,7 @@ spec:
           values: ["GL"]
         - key: karpenter.k8s.selectel/instance-gpu-name
           operator: In
-          values: ["RTX4090_48"]   # проверено 2026-09-21 (таблица флейворов karpenter v0.4.0)
+          values: ["RTX4090_48"]   # проверено (таблица флейворов karpenter v0.4.0)
         - key: karpenter.k8s.selectel/instance-gpu-count
           operator: Gt
           values: ["0"]

@@ -72,7 +72,7 @@ EOF
 kubectl get backups -A   # статус: phase completed
 ```
 
-(Проверено 2026-09-11: все три кластера — completed; barman работает с
+(Проверено: все три кластера — completed; barman работает с
 Selectel S3 path-style из коробки.)
 
 Расписание (schedule) не включено (осознанно): wal-архив пишется

@@ -20,8 +20,8 @@ nodeSelector:
   nodegroup: system   # лейбл CPU-нодгруппы из infra/01-cluster/main.tf
 
 # Внешний вход — ТОЛЬКО через Envoy Gateway (https://<litellm_hostname>),
-# сервис — ClusterIP (выделенный LB убран 09.09.2026: TLS терминирует envoy,
-# отдельный plain-HTTP балансировщик Octavia избыточен).
+# сервис — ClusterIP: TLS терминирует envoy, отдельный plain-HTTP
+# балансировщик Octavia избыточен.
 service:
   type: ClusterIP
   port: 4000

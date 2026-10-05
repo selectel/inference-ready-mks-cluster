@@ -1,5 +1,5 @@
 # =============================================================================
-# Quickstart: LoRA-адаптер через AIBrix ModelAdapter (проверено 2026-09-13).
+# Quickstart: LoRA-адаптер через AIBrix ModelAdapter (проверено).
 # Дополняет базовый деплой vllm-quickstart.yaml (там же --enable-lora и env
 # VLLM_ALLOW_RUNTIME_LORA_UPDATING — предусловия этого CR).
 #

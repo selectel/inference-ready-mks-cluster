@@ -57,7 +57,7 @@ helm install aibrix dist/chart \
 ⚠️ **Порядок `-f` важен**: дефолтный `values.yaml` чарта пиннит теги `:nightly` — наш файл идёт строго после `stable.yaml` (побеждает последний).
 
 Что делает `helm/values-selectel-mks.yaml` (см. комментарии внутри):
-- `gateway.envoyProxy.replicas=2` + affinity — дата-плейн Envoy как Deployment на system-нодах (лейбл `nodegroup=system` из `infra/01-cluster`; раньше был локальный патч envoyDaemonSet — удалён 09.09.2026, LB AIBrix больше нет);
+- `gateway.envoyProxy.replicas=2` + affinity — дата-плейн Envoy как Deployment на system-нодах (лейбл `nodegroup=system` из `infra/01-cluster`);
 - `gateway.envoyProxy.service.type=ClusterIP` — балансировщик НЕ создаётся вовсе: единственный публичный вход — LiteLLM (auth-слой), внутрь кластера ходим по стабильному имени `aibrix-gateway.envoy-gateway-system.svc` (Service создаётся terraform'ом в 02-addons; хэш-имя EG-сервиса меняется между деплоями), оператору — `kubectl port-forward`;
 - пиннинг всего контроль-плейна AIBrix (controller-manager, gateway-plugin, gpu-optimizer, metadata, redis) на ноды `nodegroup=system` — GPU-ноды Karpenter не тейнчатся, без пиннинга поды уезжали бы на дорогие GPU-ноды;
 - `AIBRIX_STATESYNC_ENABLED: "false"` — для одной реплики gateway-plugins (подняли до >1 — переключите в `"true"`, см. [docs/05](05-usage-scenarios.md));

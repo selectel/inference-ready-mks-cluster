@@ -108,10 +108,6 @@ curl https://$LITELLM_HOSTNAME/v1/chat/completions -H "Authorization: Bearer sk-
 - **Единый публичный вход**: у AIBrix нет LB вообще (ClusterIP), обойти
   auth-слой нельзя; операторский доступ к AIBrix — `kubectl port-forward`
   (см. `addons/aibrix/docs/02` §3).
-- **DaemonSet вместо Deployment** — удалено 09.09.2026: патч чарта
-  (`deploymentKind`) был нужен для совпадения подов с пулом внешнего LB
-  LiteLLM, а LB убран (вход — только edge-шлюз); теперь чистый upstream
-  `kind: Deployment` + `replicaCount: 2`.
 - **Память**: старт прокси с prisma-миграциями занимает ~1.5 ГиБ — в values
   стоит limit 2Gi (с 1Gi ловили OOMKilled, проверено).
 - **anti-affinity нельзя**: чарт наследует `affinity`/`nodeSelector` в
@@ -131,9 +127,8 @@ curl https://$LITELLM_HOSTNAME/v1/chat/completions -H "Authorization: Bearer sk-
 git clone --depth 1 https://github.com/BerriAI/litellm.git /tmp/litellm
 rm -rf addons/litellm/chart && cp -r /tmp/litellm/helm/litellm-helm addons/litellm/chart
 ```
-Затем вручную: сравнить локальные шаблоны с новыми upstream (раньше был
-патч deploymentKind в `chart/templates/deployment.yaml` — удалён 09.09.2026,
-локальных патчей чарта больше НЕТ), обновить версии в этом README и
+Затем вручную: сравнить локальные шаблоны с новыми upstream (локальных
+патчей чарта НЕТ), обновить версии в этом README и
 `Chart.yaml`-примечание в `infra/02-addons/main.tf` (в комментариях),
 прогнать проверки из AGENTS.md.
 Чарт публикует OCI-копию в `ghcr.io/berriai/litellm-helm`, но там задержка;

@@ -43,7 +43,7 @@ spec:
           values: ["3"]      # ≥4 vCPU
         # instance-memory — МЕГАБАЙТЫ (лейбл ноды: 4096 = 4 ГБ), не ГБ!
         # На 2 vCPU/4ГБ (SL2.2-4096) нода уходила в MemoryPressure
-        # (проверено 2026-09-14)
+        # (проверено)
         - key: karpenter.k8s.selectel/instance-memory
           operator: Gt
           values: ["8191"]   # ≥8 ГБ: 2×OpenSearch (JVM+page cache) +
