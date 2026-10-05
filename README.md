@@ -187,6 +187,12 @@ terraform -chdir=infra/02-addons apply -var-file=../../blueprint.tfvars
 #     он же рендерит этот манифест. До подъёма БД поды litellm/n8n/
 #     openwebui не смогут работать — после этого шага они стартуют сами
 #     (несколько минут crash-recovery).
+#     Почему kubectl, а не terraform: ресурс kubernetes_manifest требует схему
+#     CRD у API-сервера уже на этапе plan, а CRD появляется только после
+#     установки оператора (шаг 2.1) — в том же apply это замкнутый круг.
+#     Конфигурация кластеров БД при этом всё равно декларативно в terraform
+#     (этот yaml рендерит local_file из addons/cnpg/manifests/clusters.yaml.tpl); kubectl — только
+#     применение. Аналогично NodePool'ам Karpenter (инвариант №2 AGENTS.md).
 export KUBECONFIG=$(terraform -chdir=infra/01-cluster output -raw kubeconfig_path)
 kubectl apply -f infra/02-addons/rendered/cnpg-clusters.yaml
 
